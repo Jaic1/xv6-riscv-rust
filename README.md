@@ -5,4 +5,4 @@
 
 # Plan
 - [x] porting console and uart to support printf, p.s., smp = 1
-- [] have not decided yet
+- [ ] add register abstraction to support start to mret

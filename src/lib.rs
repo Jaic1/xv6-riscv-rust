@@ -9,5 +9,6 @@ mod console;
 mod consts;
 #[macro_use]
 mod printf;
+mod register;
 mod rmain;
 mod start;

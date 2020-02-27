@@ -3,7 +3,8 @@ use core::fmt;
 use core::panic;
 
 #[panic_handler]
-fn panic(_info: &panic::PanicInfo) -> ! {
+fn panic(info: &panic::PanicInfo) -> ! {
+    crate::println!("{}", info);
     loop {}
 }
 
@@ -17,7 +18,7 @@ struct Print {
 }
 
 impl Print {
-    pub fn print(&self, c: u8) {
+    fn print(&self, c: u8) {
         console::consputc(c);
     }
 }
