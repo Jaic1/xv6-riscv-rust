@@ -1,0 +1,1 @@
+pub const NCPU: u8 = 8;

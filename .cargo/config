@@ -1,0 +1,16 @@
+[build]
+target = "riscv64gc-unknown-none-elf"
+
+[target.riscv64gc-unknown-none-elf]
+rustflags = [
+    "-C", "link-arg=-Tsrc/kernel.ld"
+]
+runner = """
+    qemu-system-riscv64 \
+    -machine virt -bios none \
+    -kernel target/riscv64gc-unknown-none-elf/debug/xv6-riscv-rust \
+    -m 3G -smp 1 -nographic
+    """
+
+[term]
+verbose = true
