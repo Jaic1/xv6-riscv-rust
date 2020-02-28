@@ -1,8 +1,10 @@
 # xv6-riscv-rust
 
 # Note
-1. can only compile on target `riscv64gc-unknown-none-elf`, refer *.cargo/config* for detail
+1. can only compile on target triple `riscv64gc-unknown-none-elf`,  
+refer *.cargo/config* for detail
 
-# Plan
+# Path
 - [x] porting console and uart to support printf, p.s., smp = 1
-- [ ] add register abstraction to support start to mret
+- [x] add register abstraction to support start using mret to return to rust_main
+- [ ] spinlock or paging

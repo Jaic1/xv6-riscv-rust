@@ -1,5 +1,5 @@
 //! satp register
 
-pub unsafe fn set(satp: usize) {
+pub unsafe fn write(satp: usize) {
     asm!("csrw satp, $0"::"r"(satp)::"volatile");
 }

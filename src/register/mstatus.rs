@@ -3,14 +3,14 @@
 use bit_field::BitField;
 
 #[inline]
-unsafe fn r_mstatus() -> usize {
+unsafe fn read() -> usize {
     let ret: usize;
     asm!("csrr $0, mstatus":"=r"(ret):::"volatile");
     ret
 }
 
 #[inline]
-unsafe fn w_mstatus(x: usize) {
+unsafe fn write(x: usize) {
     asm!("csrw mstatus, $0"::"r"(x)::"volatile");
 }
 
@@ -21,9 +21,16 @@ pub enum MPP {
     Machine = 3,
 }
 
-/// Set MPP field in mstatus
+/// set MPP field
 pub unsafe fn set_mpp(mpp: MPP) {
-    let mut mstatus = r_mstatus();
+    let mut mstatus = read();
     mstatus.set_bits(11..13, mpp as usize);
-    w_mstatus(mstatus);
+    write(mstatus);
+}
+
+/// set MIE field
+pub unsafe fn set_mie() {
+    let mut mstatus = read();
+    mstatus.set_bit(3, true);
+    write(mstatus);
 }

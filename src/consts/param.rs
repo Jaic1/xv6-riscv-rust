@@ -1,1 +1,1 @@
-pub const NCPU: u8 = 8;
+pub const NCPU: usize = 8;
