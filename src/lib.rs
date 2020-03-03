@@ -10,6 +10,8 @@ mod console;
 mod consts;
 #[macro_use]
 mod printf;
+mod proc;
 mod register;
 mod rmain;
+mod spinlock;
 mod start;

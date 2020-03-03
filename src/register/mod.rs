@@ -4,6 +4,8 @@ pub mod clint;
 pub mod mie;
 pub mod mstatus;
 pub mod satp;
+pub mod sie;
+pub mod sstatus;
 
 /// medeleg
 pub mod medeleg {
@@ -51,6 +53,12 @@ pub mod mtvec {
 
 /// tp
 pub mod tp {
+    pub unsafe fn read() -> usize {
+        let ret: usize;
+        asm!("mv $0, tp":"=r"(ret):::"volatile");
+        ret
+    }
+
     pub unsafe fn write(tp: usize) {
         asm!("mv tp, $0"::"r"(tp)::"volatile");
     }
