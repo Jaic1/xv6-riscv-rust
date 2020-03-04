@@ -1,5 +1,5 @@
 //! CLINT operation, refer doc/FU540-C000-v1.0.pdf for detail.
-//! 
+//!
 //! note: mtime and mtimecmp are both 64-bit registers
 //!     they will not probably exceed the time the machine can run.
 

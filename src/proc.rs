@@ -1,5 +1,5 @@
 use crate::consts::param::NCPU;
-use crate::register::{tp, sstatus, sie};
+use crate::register::{sie, sstatus, tp};
 
 static mut CPUS: [Cpu; NCPU] = [Cpu::new(); NCPU];
 
@@ -41,7 +41,9 @@ impl Cpu {
 /// Interrupts must be disabled due to its use of mut ref to CPUS.
 pub fn push_off(old: bool) {
     let c;
-    unsafe { c = &mut CPUS[cpu_id()]; }
+    unsafe {
+        c = &mut CPUS[cpu_id()];
+    }
     if c.noff == 0 {
         c.intena = old;
     }
@@ -52,7 +54,9 @@ pub fn push_off(old: bool) {
 /// Interrupts must be disabled due to its use of mut ref to CPUS.
 pub fn pop_off() {
     let c;
-    unsafe { c = &mut CPUS[cpu_id()]; }
+    unsafe {
+        c = &mut CPUS[cpu_id()];
+    }
     if c.noff.checked_sub(1).is_none() {
         panic!("proc.rs: pop_off");
     }

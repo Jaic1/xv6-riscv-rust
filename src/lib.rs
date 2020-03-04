@@ -15,3 +15,8 @@ mod register;
 mod rmain;
 mod spinlock;
 mod start;
+
+#[cfg(feature = "unit_test")]
+fn test_main_entry() {
+    spinlock::tests::smoke();
+}

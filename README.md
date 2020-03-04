@@ -13,7 +13,6 @@ xv6-riscv-rust wrap a single object into a mutex, which implemented with spinloc
 ## Path
 - [x] porting console and uart to support printf, p.s., smp = 1
 - [x] add register abstraction to support start using mret to return to rust_main
-- [ ] cpu abstraction and spinlock
+- [x] cpu abstraction and spinlock, add unit_test feature as temp solution
 
 ## TODO
-- [ ] port __sync_synchronize()

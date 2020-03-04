@@ -1,8 +1,8 @@
 //! sie register
 
-const SSIE: usize = 1 << 1;     // software
-const STIE: usize = 1 << 5;     // timer
-const SEIE: usize = 1 << 9;     // external
+const SSIE: usize = 1 << 1; // software
+const STIE: usize = 1 << 5; // timer
+const SEIE: usize = 1 << 9; // external
 
 #[inline]
 unsafe fn read() -> usize {

@@ -37,7 +37,9 @@ static mut PRINT: Print = Print { locking: false };
 // used only in printf's print macro
 pub fn _print(args: fmt::Arguments) {
     use fmt::Write;
-    unsafe { PRINT.write_fmt(args).expect("_print: error"); }
+    unsafe {
+        PRINT.write_fmt(args).expect("_print: error");
+    }
 }
 
 #[macro_export]

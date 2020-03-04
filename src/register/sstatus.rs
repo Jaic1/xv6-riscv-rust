@@ -1,6 +1,6 @@
 //! sstatus register
 
-const SIE: usize = 1 << 1;  // supervisor interrupt enable
+const SIE: usize = 1 << 1; // supervisor interrupt enable
 
 #[inline]
 unsafe fn read() -> usize {
@@ -17,12 +17,16 @@ unsafe fn write(x: usize) {
 /// set SIE to enable device interrupts
 /// still need to set relevant bit in sie register
 pub fn intr_on() {
-    unsafe { write(read() | SIE); }
+    unsafe {
+        write(read() | SIE);
+    }
 }
 
 /// disable device interrupts
 pub fn intr_off() {
-    unsafe { write(read() | !SIE); }
+    unsafe {
+        write(read() | !SIE);
+    }
 }
 
 /// are device interrupts enabled?
