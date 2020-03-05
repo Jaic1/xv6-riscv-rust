@@ -18,5 +18,15 @@ mod start;
 
 #[cfg(feature = "unit_test")]
 fn test_main_entry() {
-    spinlock::tests::smoke();
+    use proc::cpu_id;
+
+    let cpu_id = unsafe { cpu_id() };
+
+    // test cases only needed to be executed with a single hart/kernel-thread
+    if cpu_id == 0 {
+        spinlock::tests::smoke();
+    }
+
+    // test cases needed to be executed with multiple harts/kernel-threads
+    printf::tests::println_mul_hart();
 }

@@ -11,18 +11,24 @@ use core::sync::atomic::{fence, AtomicBool, Ordering};
 pub struct SpinLock<T: ?Sized> {
     // for debugging
     // None means this spinlock is not held by any cpu
-    // TODO - Cell vs UnsafeCell
-    cpu_id: Cell<Option<usize>>,
+    //
+    // Option and isize are both ok here,
+    // but I use isize to get code written easier.
+    cpu_id: Cell<isize>,
     name: &'static str,
 
     lock: AtomicBool,
     data: UnsafeCell<T>,
 }
 
+unsafe impl<T: ?Sized + Send> Sync for SpinLock<T> {}
+// This is not needed for xv6-riscv's spinlock, while this is implemented both crate std and spin.
+// unsafe impl<T: ?Sized + Send> Send for SpinLock<T> {}
+
 impl<T> SpinLock<T> {
     pub const fn new(user_data: T, name: &'static str) -> SpinLock<T> {
         SpinLock {
-            cpu_id: Cell::new(None),
+            cpu_id: Cell::new(-1),
             name,
             lock: AtomicBool::new(false),
             data: UnsafeCell::new(user_data),
@@ -35,7 +41,7 @@ impl<T: ?Sized> SpinLock<T> {
         let r: bool;
         push_off();
         unsafe {
-            r = self.lock.load(Ordering::Relaxed) && self.cpu_id.get() == Some(proc::cpu_id());
+            r = self.lock.load(Ordering::Relaxed) && (self.cpu_id.get() == proc::cpu_id() as isize);
         }
         pop_off();
         r
@@ -52,7 +58,7 @@ impl<T: ?Sized> SpinLock<T> {
         // references happen after the lock is acquired.
         fence(Ordering::SeqCst);
         unsafe {
-            self.cpu_id.set(Some(proc::cpu_id()));
+            self.cpu_id.set(proc::cpu_id() as isize);
         }
     }
 
@@ -84,7 +90,7 @@ impl<T: ?Sized> SpinLock<T> {
         if !self.holding() {
             panic!("release");
         }
-        self.cpu_id.set(None);
+        self.cpu_id.set(-1);
         fence(Ordering::SeqCst);
         self.lock.store(false, Ordering::Release);
         pop_off();
@@ -144,6 +150,5 @@ pub mod tests {
         let m = SpinLock::new((), "smoke");
         m.lock();
         m.lock();
-        panic!("spinlock::tests::smoke");
     }
 }
