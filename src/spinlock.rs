@@ -41,7 +41,8 @@ impl<T: ?Sized> SpinLock<T> {
         let r: bool;
         push_off();
         unsafe {
-            r = self.lock.load(Ordering::Relaxed) && (self.cpu_id.get() == proc::cpu_id() as isize);
+            r = self.lock.load(Ordering::Relaxed) &&
+                (self.cpu_id.get() == proc::cpu_id() as isize);
         }
         pop_off();
         r
@@ -52,7 +53,7 @@ impl<T: ?Sized> SpinLock<T> {
         if self.holding() {
             panic!("acquire");
         }
-        while self.lock.compare_and_swap(false, true, Ordering::Acquire) != false {}
+        while self.lock.compare_and_swap(false, true, Ordering::Acquire) {}
         // Tell the C compiler and the processor to not move loads or stores
         // past this point, to ensure that the critical section's memory
         // references happen after the lock is acquired.

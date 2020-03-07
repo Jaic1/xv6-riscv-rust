@@ -43,7 +43,6 @@ pub fn _print(args: fmt::Arguments) {
 
     unsafe {
         if PR.locking.load(Ordering::Relaxed) {
-            // TODO - Is this piece of code of good style in Rust?
             let guard = PR.lock.lock();
             PR.write_fmt(args).expect("_print: error");
             drop(guard);

@@ -24,5 +24,5 @@ pub fn rust_main() -> ! {
 
     #[cfg(feature = "unit_test")]
     super::test_main_entry();
-    panic!("rust_main: end");
+    panic!("rust_main: end of hart {}", unsafe { cpu_id() });
 }
