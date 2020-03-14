@@ -70,6 +70,9 @@ macro_rules! println {
 
 #[panic_handler]
 fn panic(info: &panic::PanicInfo) -> ! {
+    unsafe {
+        PR.locking.store(false, Ordering::Relaxed);
+    }
     crate::println!("{}", info);
     loop {}
 }
@@ -81,12 +84,11 @@ fn abort() -> ! {
 
 #[cfg(feature = "unit_test")]
 pub mod tests {
-    use super::*;
     use crate::consts::param;
     use crate::proc::cpu_id;
     use core::sync::atomic::{AtomicU8, Ordering};
 
-    pub fn println_mul_hart() {
+    pub fn println_simo() {
         let cpu_id = unsafe { cpu_id() };
 
         // use NSMP to synchronize testing pr's spinlock

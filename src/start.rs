@@ -55,7 +55,7 @@ unsafe fn timerinit() {
     let offset = 32 * id;
     MSCRATCH0[offset + 4] = memlayout::CLINT_MTIMECMP + 8 * id;
     MSCRATCH0[offset + 5] = interval as usize;
-    mscratch::write((MSCRATCH0.as_ptr() as usize) + offset);
+    mscratch::write((MSCRATCH0.as_ptr() as usize) + offset * core::mem::size_of::<usize>());
 
     // set the machine-mode trap handler.
     extern "C" {

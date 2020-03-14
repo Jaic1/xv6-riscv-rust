@@ -22,8 +22,7 @@ pub unsafe fn cpu_id() -> usize {
 /// no need to bind a spinlock to it,
 /// since only one hart will use this struct
 ///
-#[derive(Copy, Clone)]
-pub struct Cpu {
+struct Cpu {
     noff: u8,
     intena: bool,
 }
@@ -60,6 +59,7 @@ pub fn pop_off() {
     if c.noff.checked_sub(1).is_none() {
         panic!("proc.rs: pop_off");
     }
+    c.noff -= 1;
     if c.noff == 0 && c.intena {
         sie::intr_on();
         sstatus::intr_on();

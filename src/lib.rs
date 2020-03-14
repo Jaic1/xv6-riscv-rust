@@ -1,6 +1,7 @@
 #![no_std]
 #![feature(asm)]
 #![feature(global_asm)]
+#![feature(const_in_array_repeat_expressions)]
 #![allow(dead_code)]
 
 global_asm!(include_str!("asm/entry.S"));
@@ -10,11 +11,13 @@ mod console;
 mod consts;
 #[macro_use]
 mod printf;
+mod mm;
 mod proc;
 mod register;
 mod rmain;
 mod spinlock;
 mod start;
+mod string;
 
 #[cfg(feature = "unit_test")]
 fn test_main_entry() {
@@ -28,5 +31,10 @@ fn test_main_entry() {
     }
 
     // test cases needed to be executed with multiple harts/kernel-threads
-    printf::tests::println_mul_hart();
+    printf::tests::println_simo();
+    mm::kalloc::tests::alloc_simo();
+
+    if cpu_id == 0 {
+        println!("all tests pass.");
+    }
 }

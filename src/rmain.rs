@@ -13,12 +13,14 @@ static STARTED: AtomicBool = AtomicBool::new(false);
 pub fn rust_main() -> ! {
     if unsafe { cpu_id() } == 0 {
         crate::console::consoleinit();
-
+        println!();
+        println!("xv6-riscv-rust is booting");
+        println!();
+        crate::mm::kalloc::kinit();
         fence(Ordering::SeqCst);
         STARTED.store(true, Ordering::Relaxed);
     } else {
         while !STARTED.load(Ordering::Relaxed) {}
-
         println!("hart {} starting", unsafe { cpu_id() });
     }
 

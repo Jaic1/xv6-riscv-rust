@@ -1,6 +1,7 @@
         #
         # machine-mode timer interrupt.
         #
+        .section .text
         .globl timervec
         .align 4
 timervec:

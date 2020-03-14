@@ -18,9 +18,15 @@
 //! PHYSTOP -- end RAM used by the kernel
 
 /// local interrupt controller, which contains the timer.
-pub const CLINT: usize = 0x02000000;
+pub const CLINT: usize = 0x2000000;
 pub const CLINT_MTIMECMP: usize = CLINT + 0x4000;
 pub const CLINT_MTIME: usize = CLINT + 0xbff8;
 
 /// qemu puts UART registers here in physical memory.
 pub const UART0: usize = 0x10000000;
+
+// the kernel expects there to be RAM
+// for use by the kernel and user pages
+// from physical address 0x80000000 to PHYSTOP.
+pub const KERNBASE: usize = 0x80000000;
+pub const PHYSTOP: usize = KERNBASE + 128 * 1024 * 1024;

@@ -12,7 +12,7 @@ Run:
 ```
 cargo run
 ```
-Get assembly code of xv6-riscv-rust:
+Objdump:
 ```
 cargo objdump --bin xv6-riscv-rust -- -d > kernel.asm
 
@@ -23,10 +23,6 @@ riscv64-unknown-elf-objdump -S xv6-rsicv > kernel.asm
 Unit Test:
 ```
 cargo run --features "unit_test"
-```
-Objdump:
-```
-cargo objdump --bin xv6-riscv-rust -- -d > kernel.asm
 ```
 target spec:
 ```
@@ -74,12 +70,38 @@ here is the execution flow: after each hart enter and execute `rust_main`,
 they will call `test_main_entry`, which call each tests submodule.  
 Usage: add cargo options `--features "unit_test`
 
+### global_asm
+```
+global_asm!(include_str!("asm/entry.S"));
+global_asm!(include_str!("asm/kernelvec.S"));
+```
+xv6-riscv doesn't add `.section .text` in *kernelvec.S*(maybe GCC can infer that),  
+but it won't work for xv6-riscv-rust, so we have to explicitly add it.  
+You can try it by commenting `.section .text` out and then use objdump to see whether `timervec` exists.
+
+### linker script
+```
+   .bss : {
+     *(.bss)
+     *(.sbss*)
+-     PROVIDE(end = .);     // works for ld, not for lld
+   }
++  PROVIDE(end = .);        // works for lld
+```
+consider the codes in *kernel.ld* above, see the comments.
+
 ## Path
 - [x] porting console and uart to support printf, p.s., smp = 1
 - [x] add register abstraction to support start using mret to return to rust_main
 - [x] cpu abstraction and spinlock, add unit_test feature as temp solution
 - [x] us spin e lock to synchronize con print sole's ln, and refactor PRINT
-- [ ] kvm
+- [x] add kernel frame allocator(kalloc), fix writing bug in `timerinit`:  
+```
+// life is so hard!
+// forget to add size_of usize in offset, which causes problem when timer interrupt happen.
+mscratch::write((MSCRATCH0.as_ptr() as usize) + offset*core::mem::size_of::<usize>());
+```
+- [ ] add more to kvm
 - [ ] add more to console, i.e., consoleread, consolewrite, console
 
 ## TODO
@@ -89,3 +111,4 @@ Usage: add cargo options `--features "unit_test`
 ## Useful Reference
 [Why implementing Send trait for Mutex?](https://users.rust-lang.org/t/why-we-implement-send-trait-for-mutex/39065)  
 [Explicitly drop](https://users.rust-lang.org/t/is-this-piece-of-codes-in-good-style/39095)
+[fixed-size linked list allocator](https://users.rust-lang.org/t/how-to-implement-a-single-linked-list-in-os-bare-metal/39223)

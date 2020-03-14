@@ -25,7 +25,7 @@ pub fn intr_on() {
 /// disable device interrupts
 pub fn intr_off() {
     unsafe {
-        write(read() | !SIE);
+        write(read() & !SIE);
     }
 }
 
