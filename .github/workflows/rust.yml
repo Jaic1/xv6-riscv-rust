@@ -22,7 +22,7 @@ jobs:
         target:  riscv64gc-unknown-none-elf
     
     - name: Run cargo check
-      uses: action-rs/cargo@v1
+      uses: actions-rs/cargo@v1
       with:
         command: check
     
