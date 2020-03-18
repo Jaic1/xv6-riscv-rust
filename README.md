@@ -105,10 +105,9 @@ mscratch::write((MSCRATCH0.as_ptr() as usize) + offset*core::mem::size_of::<usiz
 - [ ] add more to console, i.e., consoleread, consolewrite, console
 
 ## TODO
-- [ ] use form or table in Difference section
-- [ ] add travis CI
+- [ ] `mul a0, a0, a1` is not an error
 
 ## Useful Reference
 [Why implementing Send trait for Mutex?](https://users.rust-lang.org/t/why-we-implement-send-trait-for-mutex/39065)  
-[Explicitly drop](https://users.rust-lang.org/t/is-this-piece-of-codes-in-good-style/39095)
+[Explicitly drop](https://users.rust-lang.org/t/is-this-piece-of-codes-in-good-style/39095)  
 [fixed-size linked list allocator](https://users.rust-lang.org/t/how-to-implement-a-single-linked-list-in-os-bare-metal/39223)

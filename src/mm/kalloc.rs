@@ -33,7 +33,6 @@ impl Frame {
 type FrameList = Frame;
 
 static KMEM: SpinLock<FrameList> = SpinLock::new(FrameList { next: None }, "kmem");
-// static mut KMEM: FrameList = FrameList { next: None };
 
 pub fn kinit() {
     extern "C" {
