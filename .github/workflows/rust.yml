@@ -8,12 +8,23 @@ on:
 
 jobs:
   build:
-
     runs-on: ubuntu-latest
-
+    
     steps:
     - uses: actions/checkout@v2
+    
+    - uses: actions-rs/toolchain@v1
+      with:
+        toolchain: nightly
+        default: true
+        override: true
+        components: rust-src, llvm-tools-preview
+        target:  riscv64gc-unknown-none-elf
+    
+    - name: Run cargo check
+      uses: action-rs/cargo@v1
+      with:
+        command: check
+    
     - name: Build
       run: cargo build --verbose
-    - name: Run tests
-      run: cargo test --verbose
