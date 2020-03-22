@@ -7,6 +7,15 @@ while minor differences go to the document/comment in relevant source files.
 1. can only compile on target triple `riscv64gc-unknown-none-elf`,  
 refer *.cargo/config* for detail
 
+2. `cargo run` will write things below to the console in the end, which is expected.
+```
+panickeadni at ckpead niatck 'e'd art 'rrusust_t_mamainin: :enu esd t_main: end of hart 0', src/rmain.rs:34:5
+nd of hart 2',o f src/rmain.rs:34:5
+hart 1', src/rmain.rs:34:5
+```
+Reason: there are 3 harts, and `panic` will not acquire the `Pr` lock to write,  
+which could be helpful when debugging.
+
 ## Usage
 Run:
 ```
@@ -95,14 +104,10 @@ consider the codes in *kernel.ld* above, see the comments.
 - [x] add register abstraction to support start using mret to return to rust_main
 - [x] cpu abstraction and spinlock, add unit_test feature as temp solution
 - [x] us spin e lock to synchronize con print sole's ln, and refactor PRINT
-- [x] add kernel frame allocator(kalloc), fix writing bug in `timerinit`:  
-```
-// life is so hard!
-// forget to add size_of usize in offset, which causes problem when timer interrupt happen.
-mscratch::write((MSCRATCH0.as_ptr() as usize) + offset*core::mem::size_of::<usize>());
-```
-- [ ] add more to kvm
-- [ ] add more to console, i.e., consoleread, consolewrite, console
+- [x] add kernel frame allocator(kalloc), fix writing bug in `timerinit`
+- [x] switch to global allocator, then we can use Box to allocate memory
+- [ ] add paging in kernel(kvminit, kvminithart)
+- [ ] replace linked list allocator with buddy system allocator
 
 ## TODO
 - [ ] `mul a0, a0, a1` is not an error

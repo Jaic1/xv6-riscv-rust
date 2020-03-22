@@ -11,20 +11,25 @@ static STARTED: AtomicBool = AtomicBool::new(false);
 
 /// start() jumps here in supervisor mode on all CPUs.
 pub fn rust_main() -> ! {
-    if unsafe { cpu_id() } == 0 {
-        crate::console::consoleinit();
-        println!();
-        println!("xv6-riscv-rust is booting");
-        println!();
-        crate::mm::kalloc::kinit();
-        fence(Ordering::SeqCst);
-        STARTED.store(true, Ordering::Relaxed);
-    } else {
-        while !STARTED.load(Ordering::Relaxed) {}
-        println!("hart {} starting", unsafe { cpu_id() });
+    unsafe {
+        if cpu_id() == 0 {
+            crate::console::consoleinit();
+            println!();
+            println!("xv6-riscv-rust is booting");
+            println!();
+            crate::mm::kalloc::kinit();
+
+            fence(Ordering::SeqCst);
+            STARTED.store(true, Ordering::Relaxed);
+        } else {
+            while !STARTED.load(Ordering::Relaxed) {}
+
+            println!("hart {} starting", cpu_id());
+        }
     }
 
     #[cfg(feature = "unit_test")]
     super::test_main_entry();
+
     panic!("rust_main: end of hart {}", unsafe { cpu_id() });
 }
