@@ -105,9 +105,8 @@ consider the codes in *kernel.ld* above, see the comments.
 - [x] cpu abstraction and spinlock, add unit_test feature as temp solution
 - [x] us spin e lock to synchronize con print sole's ln, and refactor PRINT
 - [x] add kernel frame allocator(kalloc), fix writing bug in `timerinit`
-- [x] switch to global allocator, then we can use Box to allocate memory
+- [ ] ~~buddy system allocator~~
 - [ ] add paging in kernel(kvminit, kvminithart)
-- [ ] replace linked list allocator with buddy system allocator
 
 ## TODO
 - [ ] `mul a0, a0, a1` is not an error
@@ -116,3 +115,4 @@ consider the codes in *kernel.ld* above, see the comments.
 [Why implementing Send trait for Mutex?](https://users.rust-lang.org/t/why-we-implement-send-trait-for-mutex/39065)  
 [Explicitly drop](https://users.rust-lang.org/t/is-this-piece-of-codes-in-good-style/39095)  
 [fixed-size linked list allocator](https://users.rust-lang.org/t/how-to-implement-a-single-linked-list-in-os-bare-metal/39223)
+[take ownership from nothing](https://stackoverflow.com/questions/57225328/how-to-take-ownership-of-a-c-pointer-in-rust-and-drop-it-appropriately)

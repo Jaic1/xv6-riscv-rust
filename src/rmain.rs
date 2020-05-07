@@ -19,6 +19,10 @@ pub fn rust_main() -> ! {
             println!();
             crate::mm::kalloc::kinit();
 
+            // debug
+            // println!("{}", core::mem::size_of::<crate::mm::pagetable::PageTable>());
+            // debug
+
             fence(Ordering::SeqCst);
             STARTED.store(true, Ordering::Relaxed);
         } else {

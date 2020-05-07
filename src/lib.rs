@@ -2,11 +2,7 @@
 #![feature(asm)]
 #![feature(global_asm)]
 #![feature(const_in_array_repeat_expressions)]
-#![feature(alloc_error_handler)]
-#![feature(new_uninit)]
 #![allow(dead_code)]
-
-extern crate alloc;
 
 global_asm!(include_str!("asm/entry.S"));
 global_asm!(include_str!("asm/kernelvec.S"));

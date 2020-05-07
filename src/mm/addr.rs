@@ -1,5 +1,6 @@
 use crate::consts::memlayout::PHYSTOP;
 use crate::mm::PGSIZE;
+use core::convert::TryFrom;
 use core::result::Result;
 
 #[repr(transparent)]
@@ -39,5 +40,40 @@ impl PhysAddr {
     }
 }
 
+/// Wrapper of usize to represent the virtual address
+///
+/// For 64-bit virtual address, it guarantees that 38-bit to 63-bit are zero
+/// reason for 38 instead of 39, from xv6-riscv:
+/// one beyond the highest possible virtual address.
+/// MAXVA is actually one bit less than the max allowed by
+/// Sv39, to avoid having to sign-extend virtual addresses
+/// that have the high bit set.
 #[repr(transparent)]
 pub struct VirtAddr(usize);
+
+impl VirtAddr {
+    /// retrieve the vpn\[level\] of the virtual address
+    /// only accepts level that is between 0 and 2
+    #[inline]
+    pub fn page_num(&self, level: usize) -> usize {
+        (self.0 >> (12 + level * 9)) & 0x1ff
+    }
+}
+
+impl TryFrom<usize> for VirtAddr {
+    type Error = &'static str;
+
+    fn try_from(value: usize) -> Result<Self, Self::Error> {
+        if (value >> 38) > 0 {
+            Err("value for VirtAddr should be smaller than 1<<38")
+        } else {
+            Ok(Self(value))
+        }
+    }
+}
+
+impl Into<usize> for VirtAddr {
+    fn into(self) -> usize {
+        self.0
+    }
+}

@@ -2,7 +2,7 @@ pub mod kalloc;
 
 mod addr;
 mod kvm;
-mod pagetable;
+pub mod pagetable;
 
 const PGSIZE: usize = 4096;
 const PGSHIFT: u8 = 12;
