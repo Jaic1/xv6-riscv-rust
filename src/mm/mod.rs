@@ -1,11 +1,14 @@
-pub mod kalloc;
+use crate::consts::PGSIZE;
+
+pub use addr::{PhysAddr, VirtAddr};
+pub use boxed::{Box, PageAligned};
+pub use kalloc::{kinit, kalloc, kfree};
 
 mod addr;
+mod boxed;
+mod kalloc;
 mod kvm;
-pub mod pagetable;
-
-const PGSIZE: usize = 4096;
-const PGSHIFT: u8 = 12;
+mod pagetable;
 
 #[inline]
 fn pg_round_up(addr: usize) -> usize {

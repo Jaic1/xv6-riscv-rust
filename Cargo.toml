@@ -8,6 +8,7 @@ edition = "2018"
 
 [dependencies]
 bit_field = "0.10.0"
+bitflags = "1.2.1"
 
 [features]
 unit_test = []

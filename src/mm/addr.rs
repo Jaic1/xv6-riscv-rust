@@ -1,7 +1,7 @@
-use crate::consts::memlayout::PHYSTOP;
-use crate::mm::PGSIZE;
 use core::convert::TryFrom;
 use core::result::Result;
+
+use crate::consts::{PHYSTOP, PGSIZE, PGSHIFT, PGMASK, PGMASKLEN};
 
 #[repr(transparent)]
 pub struct PhysAddr(usize);
@@ -56,7 +56,7 @@ impl VirtAddr {
     /// only accepts level that is between 0 and 2
     #[inline]
     pub fn page_num(&self, level: usize) -> usize {
-        (self.0 >> (12 + level * 9)) & 0x1ff
+        (self.0 >> (PGSHIFT + level * PGMASKLEN)) & PGMASK
     }
 }
 

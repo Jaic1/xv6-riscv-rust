@@ -1,4 +1,4 @@
-use crate::consts::memlayout::UART0;
+use crate::consts::UART0;
 use core::ptr;
 
 macro_rules! Reg {

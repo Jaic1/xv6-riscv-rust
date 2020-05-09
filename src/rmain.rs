@@ -17,7 +17,7 @@ pub fn rust_main() -> ! {
             println!();
             println!("xv6-riscv-rust is booting");
             println!();
-            crate::mm::kalloc::kinit();
+            crate::mm::kinit();
 
             // debug
             // println!("{}", core::mem::size_of::<crate::mm::pagetable::PageTable>());

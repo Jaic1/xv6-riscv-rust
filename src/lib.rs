@@ -2,7 +2,11 @@
 #![feature(asm)]
 #![feature(global_asm)]
 #![feature(const_in_array_repeat_expressions)]
+#![feature(ptr_internals)]
 #![allow(dead_code)]
+
+#[macro_use]
+extern crate bitflags;
 
 global_asm!(include_str!("asm/entry.S"));
 global_asm!(include_str!("asm/kernelvec.S"));

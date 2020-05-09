@@ -1,11 +1,8 @@
-use crate::consts::memlayout::PHYSTOP;
+use crate::consts::PHYSTOP;
 use crate::mm::PGSIZE;
 use crate::spinlock::SpinLock;
-use core::ops::{Deref, DerefMut};
 use core::option::Option;
 use core::ptr::{self, NonNull};
-
-pub trait PageAligned {}
 
 #[repr(C)]
 struct Frame {
@@ -14,13 +11,9 @@ struct Frame {
 
 unsafe impl Send for Frame {}
 
-impl PageAligned for Frame {}
-
 impl Frame {
-    /// Convert from raw addr to a new Frame
-    /// only used when then kernel boots and call kinit
-    unsafe fn new(pa: usize) -> NonNull<Frame> {
-        let frame_ptr = pa as *mut Frame;
+    unsafe fn new(ptr: *mut u8) -> NonNull<Frame> {
+        let frame_ptr = ptr as *mut Frame;
         ptr::write(frame_ptr, Frame { next: None });
         NonNull::new(frame_ptr).unwrap()
     }
@@ -31,36 +24,6 @@ impl Frame {
 
     fn take_next(&mut self) -> Option<NonNull<Frame>> {
         self.next.take()
-    }
-}
-
-#[repr(C)]
-struct FrameWrapper {
-    ptr: NonNull<Frame>,
-}
-
-impl<T: PageAligned> From<NonNull<T>> for FrameWrapper {
-    fn from(ptr: NonNull<T>) -> Self {
-        FrameWrapper { ptr: ptr.cast() }
-    }
-}
-
-impl FrameWrapper {
-    pub fn into_raw_non_null(self) -> NonNull<Frame> {
-        self.ptr
-    }
-}
-
-impl Deref for FrameWrapper {
-    type Target = Frame;
-    fn deref(&self) -> &Self::Target {
-        unsafe { self.ptr.as_ref() }
-    }
-}
-
-impl DerefMut for FrameWrapper {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        unsafe { self.ptr.as_mut() }
     }
 }
 
@@ -81,7 +44,7 @@ pub unsafe fn kinit() {
 unsafe fn free_range(start: usize, end: usize) {
     let start = super::pg_round_up(start);
     for pa in (start..end).step_by(PGSIZE) {
-        kfree(Frame::new(pa));
+        kfree(pa as *mut u8);
     }
 }
 
@@ -89,15 +52,15 @@ unsafe fn free_range(start: usize, end: usize) {
 /// which normally should have been returned by a
 /// call to kalloc().  (The exception is when
 /// initializing the allocator; see kinit above.)
-pub fn kfree<T: PageAligned>(unfreed_data: NonNull<T>) {
-    let mut frame = FrameWrapper::from(unfreed_data);
+pub unsafe fn kfree(ptr: *mut u8) {
+    let mut frame: NonNull<Frame> = Frame::new(ptr);
     let mut kmem = KMEM.lock();
-    frame.set(kmem.take_next());
-    kmem.set(Some(frame.into_raw_non_null()));
+    frame.as_mut().set(kmem.take_next());
+    kmem.set(Some(frame));
     drop(kmem);
 }
 
-pub fn kalloc<T: PageAligned>() -> Option<NonNull<T>> {
+pub unsafe fn kalloc() -> Option<*mut u8> {
     let mut kmem = KMEM.lock();
     let first_frame = kmem.take_next();
     if let Some(mut first_frame_ptr) = first_frame {
@@ -108,7 +71,7 @@ pub fn kalloc<T: PageAligned>() -> Option<NonNull<T>> {
     drop(kmem);
 
     match first_frame {
-        Some(first_frame_ptr) => Some(first_frame_ptr.cast()),
+        Some(first_frame_ptr) => Some(first_frame_ptr.as_ptr() as *mut u8),
         None => None,
     }
 }
@@ -130,15 +93,12 @@ pub mod tests {
         let id = unsafe { cpu_id() };
 
         for _ in 0..10 {
-            let page_table = kalloc::<PageTable>();
-            if let Some(page_table_ptr) = page_table {
-                println!(
-                    "hart {} alloc page table at {:#x}",
-                    id,
-                    page_table_ptr.as_ptr() as usize
-                );
-            }
-            kfree(page_table.expect("alloc_simo fails"));
+            let page_table = PageTable::new();
+            println!(
+                "hart {} alloc page table at {:#x}",
+                id,
+                page_table.addr()
+            );
         }
 
         NSMP.fetch_sub(1, Ordering::Relaxed);

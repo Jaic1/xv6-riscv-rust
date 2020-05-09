@@ -3,7 +3,7 @@
 //! note: mtime and mtimecmp are both 64-bit registers
 //!     they will not probably exceed the time the machine can run.
 
-use crate::consts::memlayout::{CLINT_MTIME, CLINT_MTIMECMP};
+use crate::consts::{CLINT_MTIME, CLINT_MTIMECMP};
 use core::ptr;
 
 #[inline]

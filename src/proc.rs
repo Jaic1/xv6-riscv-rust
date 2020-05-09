@@ -1,4 +1,4 @@
-use crate::consts::param::NCPU;
+use crate::consts::NCPU;
 use crate::register::{sie, sstatus, tp};
 
 static mut CPUS: [Cpu; NCPU] = [Cpu::new(); NCPU];

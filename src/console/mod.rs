@@ -1,4 +1,4 @@
-use crate::consts::param::CONSOLE_BUF as INPUT_BUF;
+use crate::consts::CONSOLE_BUF as INPUT_BUF;
 use crate::spinlock::SpinLock;
 
 mod uart;

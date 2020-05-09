@@ -106,6 +106,7 @@ consider the codes in *kernel.ld* above, see the comments.
 - [x] us spin e lock to synchronize con print sole's ln, and refactor PRINT
 - [x] add kernel frame allocator(kalloc), fix writing bug in `timerinit`
 - [ ] ~~buddy system allocator~~
+- [x] use [Unique](https://doc.rust-lang.org/1.26.2/std/ptr/struct.Unique.html) to provide ownership, see [this](https://doc.rust-lang.org/nomicon/vec-layout.html) for example
 - [ ] add paging in kernel(kvminit, kvminithart)
 
 ## TODO
@@ -114,5 +115,7 @@ consider the codes in *kernel.ld* above, see the comments.
 ## Useful Reference
 [Why implementing Send trait for Mutex?](https://users.rust-lang.org/t/why-we-implement-send-trait-for-mutex/39065)  
 [Explicitly drop](https://users.rust-lang.org/t/is-this-piece-of-codes-in-good-style/39095)  
-[fixed-size linked list allocator](https://users.rust-lang.org/t/how-to-implement-a-single-linked-list-in-os-bare-metal/39223)
-[take ownership from nothing](https://stackoverflow.com/questions/57225328/how-to-take-ownership-of-a-c-pointer-in-rust-and-drop-it-appropriately)
+[fixed-size linked list allocator](https://users.rust-lang.org/t/how-to-implement-a-single-linked-list-in-os-bare-metal/39223)  
+[take ownership from nothing](https://stackoverflow.com/questions/57225328/how-to-take-ownership-of-a-c-pointer-in-rust-and-drop-it-appropriately)  
+[Unique issue](https://www.reddit.com/r/rust/comments/bcb0dh/replacement_for_stdptrunique_and_stdptrshared/)  
+[out of memory](https://www.reddit.com/r/rust/comments/279k7i/whats_rusts_mechanism_for_recovering_from_say/)  

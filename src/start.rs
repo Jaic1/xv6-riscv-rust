@@ -1,11 +1,11 @@
-use crate::consts::{memlayout, param};
+use crate::consts::{NCPU, CLINT_MTIMECMP};
 use crate::register::{
     clint, medeleg, mepc, mhartid, mideleg, mie, mscratch, mstatus, mtvec, satp, tp,
 };
 use crate::rmain::rust_main;
 
 /// for each cpu, only 6 of 32 usize are used, others are reserved.
-static mut MSCRATCH0: [usize; param::NCPU * 32] = [0; param::NCPU * 32];
+static mut MSCRATCH0: [usize; NCPU * 32] = [0; NCPU * 32];
 
 #[no_mangle]
 pub unsafe fn start() -> ! {
@@ -53,7 +53,7 @@ unsafe fn timerinit() {
     // scratch[4] : address of CLINT MTIMECMP register.
     // scratch[5] : desired interval (in cycles) between timer interrupts.
     let offset = 32 * id;
-    MSCRATCH0[offset + 4] = memlayout::CLINT_MTIMECMP + 8 * id;
+    MSCRATCH0[offset + 4] = CLINT_MTIMECMP + 8 * id;
     MSCRATCH0[offset + 5] = interval as usize;
     mscratch::write((MSCRATCH0.as_ptr() as usize) + offset * core::mem::size_of::<usize>());
 
