@@ -17,13 +17,25 @@
 //! end -- start of kernel page allocation area
 //! PHYSTOP -- end RAM used by the kernel
 
-/// local interrupt controller, which contains the timer.
+use crate::consts::PGSIZE;
+
+// local interrupt controller, which contains the timer.
 pub const CLINT: usize = 0x2000000;
+pub const CLINT_MAP_SIZE: usize = 0x10000;
 pub const CLINT_MTIMECMP: usize = CLINT + 0x4000;
 pub const CLINT_MTIME: usize = CLINT + 0xbff8;
 
-/// qemu puts UART registers here in physical memory.
+// qemu puts UART registers here in physical memory.
 pub const UART0: usize = 0x10000000;
+pub const UART0_MAP_SIZE: usize = PGSIZE;
+
+// virtio mmio interface
+pub const VIRTIO0: usize = 0x10001000;
+pub const VIRTIO0_MAP_SIZE: usize = PGSIZE;
+
+// qemu puts programmable interrupt controller here.
+pub const PLIC: usize = 0x0c000000;
+pub const PLIC_MAP_SIZE: usize = 0x400000;
 
 // the kernel expects there to be RAM
 // for use by the kernel and user pages

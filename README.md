@@ -106,8 +106,9 @@ consider the codes in *kernel.ld* above, see the comments.
 - [x] us spin e lock to synchronize con print sole's ln, and refactor PRINT
 - [x] add kernel frame allocator(kalloc), fix writing bug in `timerinit`
 - [ ] ~~buddy system allocator~~
-- [x] use [Unique](https://doc.rust-lang.org/1.26.2/std/ptr/struct.Unique.html) to provide ownership, see [this](https://doc.rust-lang.org/nomicon/vec-layout.html) for example
-- [ ] add paging in kernel(kvminit, kvminithart)
+- [x] use [Unique](https://doc.rust-lang.org/1.26.2/std/ptr/struct.Unique.html) in self-implemented Box to provide ownership, see [this](https://doc.rust-lang.org/nomicon/vec-layout.html) for example
+- [x] add Addr and PageTable
+- [ ] add kvm for kernel, i.e., kernel paging
 
 ## TODO
 - [ ] `mul a0, a0, a1` is not an error

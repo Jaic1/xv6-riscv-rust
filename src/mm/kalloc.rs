@@ -1,8 +1,10 @@
-use crate::consts::PHYSTOP;
-use crate::mm::PGSIZE;
-use crate::spinlock::SpinLock;
 use core::option::Option;
 use core::ptr::{self, NonNull};
+
+use crate::consts::{PGSIZE, PHYSTOP};
+use crate::mm::{Addr, PhysAddr};
+use crate::spinlock::SpinLock;
+use core::convert::TryFrom;
 
 #[repr(C)]
 struct Frame {
@@ -36,15 +38,21 @@ pub unsafe fn kinit() {
     extern "C" {
         fn end();
     }
-    println!("kinit: end={:#x}", end as usize);
-    free_range(end as usize, PHYSTOP);
+    let end = end as usize;
+    println!("kinit: end={:#x}", end);
+    free_range(
+        PhysAddr::try_from((end + PGSIZE - 1) & !(PGSIZE - 1)).unwrap(),
+        PhysAddr::try_from(PHYSTOP).unwrap(),
+    );
     println!("kinit: done");
 }
 
-unsafe fn free_range(start: usize, end: usize) {
-    let start = super::pg_round_up(start);
-    for pa in (start..end).step_by(PGSIZE) {
-        kfree(pa as *mut u8);
+// only used in kinit()
+unsafe fn free_range(mut start: PhysAddr, end: PhysAddr) {
+    start.pg_round_up();
+    while start != end {
+        kfree(start.as_usize() as *mut u8);
+        start.add_page();
     }
 }
 
@@ -64,9 +72,7 @@ pub unsafe fn kalloc() -> Option<*mut u8> {
     let mut kmem = KMEM.lock();
     let first_frame = kmem.take_next();
     if let Some(mut first_frame_ptr) = first_frame {
-        unsafe {
-            kmem.set(first_frame_ptr.as_mut().take_next());
-        }
+        kmem.set(first_frame_ptr.as_mut().take_next());
     }
     drop(kmem);
 
@@ -94,11 +100,7 @@ pub mod tests {
 
         for _ in 0..10 {
             let page_table = PageTable::new();
-            println!(
-                "hart {} alloc page table at {:#x}",
-                id,
-                page_table.addr()
-            );
+            println!("hart {} alloc page table at {:#x}", id, page_table.addr());
         }
 
         NSMP.fetch_sub(1, Ordering::Relaxed);

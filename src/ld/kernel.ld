@@ -18,6 +18,9 @@ SECTIONS
     *(.rodata)
   }
 
+  . = ALIGN(0x1000);
+  PROVIDE(etext = .);
+
   /*
    * make sure end is after data and bss.
    */

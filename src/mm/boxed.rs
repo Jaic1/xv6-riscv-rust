@@ -12,10 +12,8 @@ pub struct Box<T>(Unique<T>);
 
 impl<T: PageAligned> Box<T> {
     pub fn new() -> Option<Box<T>> {
-        match unsafe{kalloc()} {
-            Some(ptr) => Some(Self(
-                Unique::new(ptr as *mut T).unwrap()
-            )),
+        match unsafe { kalloc() } {
+            Some(ptr) => Some(Self(Unique::new(ptr as *mut T).unwrap())),
             None => None,
         }
     }

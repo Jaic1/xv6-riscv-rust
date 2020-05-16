@@ -1,4 +1,4 @@
-use crate::consts::{NCPU, CLINT_MTIMECMP};
+use crate::consts::{CLINT_MTIMECMP, NCPU};
 use crate::register::{
     clint, medeleg, mepc, mhartid, mideleg, mie, mscratch, mstatus, mtvec, satp, tp,
 };

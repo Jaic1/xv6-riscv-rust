@@ -1,9 +1,9 @@
-use core::mem;
+use core::convert::TryFrom;
 
-use crate::consts::{PGSHIFT, SV39FLAGLEN};
-use crate::mm::{VirtAddr, PhysAddr};
-use crate::mm::{kalloc, kfree, PageAligned};
+use crate::consts::{PGSHIFT, SATP_SV39, SV39FLAGLEN};
 use crate::mm::Box;
+use crate::mm::PageAligned;
+use crate::mm::{Addr, PhysAddr, VirtAddr};
 
 bitflags! {
     pub struct PteFlag: usize {
@@ -12,6 +12,9 @@ bitflags! {
         const W = 1 << 2;
         const X = 1 << 3;
         const U = 1 << 4;
+        const G = 1 << 5;
+        const A = 1 << 6;
+        const D = 1 << 7;
     }
 }
 
@@ -28,7 +31,7 @@ struct PageTableEntry {
 impl PageTableEntry {
     #[inline]
     fn is_valid(&self) -> bool {
-        (self.data & (PteFlag::V.bits()))  > 0
+        (self.data & (PteFlag::V.bits())) > 0
     }
 
     #[inline]
@@ -42,25 +45,41 @@ impl PageTableEntry {
     }
 
     #[inline]
-    fn write(&mut self, page_table: usize) {
-        self.data = ((page_table >> PGSHIFT) << SV39FLAGLEN)
-            | (PteFlag::V.bits());
+    fn write(&mut self, pa: PhysAddr) {
+        self.data = ((pa.as_usize() >> PGSHIFT) << SV39FLAGLEN) | (PteFlag::V.bits());
+    }
+
+    #[inline]
+    fn write_perm(&mut self, pa: PhysAddr, perm: PteFlag) {
+        self.data = ((pa.as_usize() >> PGSHIFT) << SV39FLAGLEN) | (perm | PteFlag::V).bits()
     }
 }
 
 #[repr(C, align(4096))]
 pub struct PageTable {
-    data: [PageTableEntry; 512]
+    data: [PageTableEntry; 512],
 }
 
 impl PageAligned for PageTable {}
 
 impl PageTable {
+    pub const fn empty() -> Self {
+        Self {
+            data: [PageTableEntry{data: 0}; 512],
+        }
+    }
+
     /// clear all bits to zero, typically called after Box::new()
     pub fn clear(&mut self) {
         for pte in self.data.iter_mut() {
             pte.write_zero();
         }
+    }
+
+    /// Convert the page table to be the usize
+    /// that can be written in satp register
+    pub unsafe fn as_satp(&self) -> usize {
+        SATP_SV39 | ((&self.data as *const _ as usize) >> PGSHIFT)
     }
 
     /// Create PTEs for virtual addresses starting at va that refer to
@@ -69,24 +88,47 @@ impl PageTable {
     /// allocate a needed page-table page.
     pub fn map_pages(
         &mut self,
-        va: VirtAddr,
+        mut va: VirtAddr,
         size: usize,
-        pa: PhysAddr,
+        mut pa: PhysAddr,
         perm: PteFlag,
     ) -> Result<(), &'static str> {
-        // TODO - may modify VirtAddr and PhyAddr first
+        let mut last = VirtAddr::try_from(va.as_usize() + size - 1)?;
+        va.pg_round_down();
+        last.pg_round_down();
+
+        while va != last {
+            match self.walk(va, true) {
+                Some(pte) => {
+                    if pte.is_valid() {
+                        panic!("remap");
+                    }
+                    pte.write_perm(pa, perm);
+                    va.add_page();
+                    pa.add_page();
+                }
+                None => {
+                    return Err("PageTable.map_pages: \
+                    not enough memory for new page table")
+                }
+            }
+        }
+
         Ok(())
     }
 
+    /// Return the bottom level of PTE that corresponds to the given va.
+    /// i.e. this PTE contains the pa that is mapped for the given va.
+    ///
+    /// if alloc is true then allocate new page table necessarily
+    /// but doesn't change anything.(lazy allocation)
     fn walk(&mut self, va: VirtAddr, alloc: bool) -> Option<&mut PageTableEntry> {
         let mut page_table = self as *mut PageTable;
         for level in (1..=2).rev() {
-            let pte = unsafe {
-                &mut (*page_table).data[va.page_num(level)]
-            };
+            let pte = unsafe { &mut (*page_table).data[va.page_num(level)] };
 
             if pte.is_valid() {
-                page_table = pte.as_page_table() ;
+                page_table = pte.as_page_table();
             } else {
                 if !alloc {
                     return None;
@@ -95,15 +137,12 @@ impl PageTable {
                     Some(mut new_page_table) => {
                         new_page_table.clear();
                         page_table = new_page_table.into_raw();
-                        pte.write(page_table as usize);
-                    },
+                        pte.write(PhysAddr::try_from(page_table as usize).unwrap());
+                    }
                     None => return None,
                 }
             }
         }
-        unsafe {
-            Some(&mut (*page_table).data[va.page_num(0)])
-        }
+        unsafe { Some(&mut (*page_table).data[va.page_num(0)]) }
     }
 }
-
