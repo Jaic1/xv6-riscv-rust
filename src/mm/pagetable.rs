@@ -65,7 +65,7 @@ impl PageAligned for PageTable {}
 impl PageTable {
     pub const fn empty() -> Self {
         Self {
-            data: [PageTableEntry{data: 0}; 512],
+            data: [PageTableEntry { data: 0 }; 512],
         }
     }
 
@@ -93,14 +93,20 @@ impl PageTable {
         mut pa: PhysAddr,
         perm: PteFlag,
     ) -> Result<(), &'static str> {
-        let mut last = VirtAddr::try_from(va.as_usize() + size - 1)?;
+        let mut last = VirtAddr::try_from(va.as_usize() + size)?;
         va.pg_round_down();
-        last.pg_round_down();
+        last.pg_round_up();
 
         while va != last {
             match self.walk(va, true) {
                 Some(pte) => {
                     if pte.is_valid() {
+                        println!(
+                            "va: {:#x}, pa: {:#x}, pte: {:#x}",
+                            va.as_usize(),
+                            pa.as_usize(),
+                            pte.data
+                        );
                         panic!("remap");
                     }
                     pte.write_perm(pa, perm);

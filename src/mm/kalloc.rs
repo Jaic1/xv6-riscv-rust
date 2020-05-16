@@ -1,10 +1,10 @@
+use core::convert::TryFrom;
 use core::option::Option;
 use core::ptr::{self, NonNull};
 
 use crate::consts::{PGSIZE, PHYSTOP};
 use crate::mm::{Addr, PhysAddr};
 use crate::spinlock::SpinLock;
-use core::convert::TryFrom;
 
 #[repr(C)]
 struct Frame {

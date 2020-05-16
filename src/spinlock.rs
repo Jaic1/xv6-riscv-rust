@@ -2,11 +2,12 @@
 //! unlike xv6-riscv, xv6-riscv-rust wraps data into a spinlock
 //! useful reference crate spin(https://crates.io/crates/spin)
 
-use crate::proc;
-use crate::register::sstatus;
 use core::cell::{Cell, UnsafeCell};
 use core::ops::{Deref, DerefMut, Drop};
 use core::sync::atomic::{fence, AtomicBool, Ordering};
+
+use crate::proc;
+use crate::register::sstatus;
 
 pub struct SpinLock<T: ?Sized> {
     // for debugging

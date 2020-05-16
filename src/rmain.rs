@@ -20,8 +20,8 @@ pub fn rust_main() -> ! {
             println!("xv6-riscv-rust is booting");
             println!();
             kinit();
-            kvm_init();         // init kernel page table
-            kvm_init_hart();    // trun on paging
+            kvm_init(); // init kernel page table
+            kvm_init_hart(); // trun on paging
 
             // TODO - init other things
 
@@ -31,7 +31,7 @@ pub fn rust_main() -> ! {
             while !STARTED.load(Ordering::Relaxed) {}
             fence(Ordering::SeqCst);
             println!("hart {} starting", cpu_id());
-            kvm_init_hart();    // turn on paging
+            kvm_init_hart(); // turn on paging
 
             // TODO - init other things
         }

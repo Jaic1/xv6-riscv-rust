@@ -1,6 +1,7 @@
 //! self-implementation of Box smart pointer
 //! some details might be different
 
+use core::mem;
 use core::ops::{Deref, DerefMut};
 use core::ptr::Unique;
 
@@ -19,7 +20,9 @@ impl<T: PageAligned> Box<T> {
     }
 
     pub fn into_raw(self) -> *mut T {
-        self.0.as_ptr()
+        let ptr = self.0.as_ptr();
+        mem::forget(self);
+        ptr
     }
 }
 
