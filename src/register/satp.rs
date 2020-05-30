@@ -1,5 +1,5 @@
 //! satp register
 
 pub unsafe fn write(satp: usize) {
-    asm!("csrw satp, $0"::"r"(satp)::"volatile");
+    llvm_asm!("csrw satp, $0"::"r"(satp)::"volatile");
 }

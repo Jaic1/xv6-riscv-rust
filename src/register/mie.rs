@@ -5,13 +5,13 @@ use bit_field::BitField;
 #[inline]
 unsafe fn read() -> usize {
     let ret: usize;
-    asm!("csrr $0, mie":"=r"(ret):::"volatile");
+    llvm_asm!("csrr $0, mie":"=r"(ret):::"volatile");
     ret
 }
 
 #[inline]
 unsafe fn write(x: usize) {
-    asm!("csrw mie, $0"::"r"(x)::"volatile");
+    llvm_asm!("csrw mie, $0"::"r"(x)::"volatile");
 }
 
 /// set MTIE field

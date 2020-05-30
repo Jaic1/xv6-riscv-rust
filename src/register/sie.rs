@@ -7,13 +7,13 @@ const SEIE: usize = 1 << 9; // external
 #[inline]
 unsafe fn read() -> usize {
     let ret: usize;
-    asm!("csrr $0, sie":"=r"(ret):::"volatile");
+    llvm_asm!("csrr $0, sie":"=r"(ret):::"volatile");
     ret
 }
 
 #[inline]
 unsafe fn write(x: usize) {
-    asm!("csrw sie, $0"::"r"(x)::"volatile");
+    llvm_asm!("csrw sie, $0"::"r"(x)::"volatile");
 }
 
 /// enable all software interrupts

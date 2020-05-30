@@ -1,6 +1,12 @@
 #![no_std]
-#![feature(asm)]
+<<<<<<< HEAD
+#![feature(llvm_asm)]
+#![feature(global_asm)]
 #![feature(const_fn)]
+=======
+#![feature(llvm_asm)]
+#![feature(global_asm)]
+>>>>>>> 9c08b3e5498e2cfd8c4ab9361d437c1ed5f7b736
 #![feature(const_in_array_repeat_expressions)]
 #![feature(global_asm)]
 #![feature(ptr_internals)]
