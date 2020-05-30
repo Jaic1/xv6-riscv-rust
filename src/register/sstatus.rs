@@ -5,13 +5,13 @@ const SIE: usize = 1 << 1; // supervisor interrupt enable
 #[inline]
 unsafe fn read() -> usize {
     let ret: usize;
-    asm!("csrr $0, sstatus":"=r"(ret):::"volatile");
+    llvm_asm!("csrr $0, sstatus":"=r"(ret):::"volatile");
     ret
 }
 
 #[inline]
 unsafe fn write(x: usize) {
-    asm!("csrw sstatus, $0"::"r"(x)::"volatile");
+    llvm_asm!("csrw sstatus, $0"::"r"(x)::"volatile");
 }
 
 /// set SIE to enable device interrupts

@@ -30,7 +30,7 @@ pub unsafe fn start() -> ! {
     tp::write(id);
 
     // switch to supervisor mode and jump to main().
-    asm!("mret"::::"volatile");
+    llvm_asm!("mret"::::"volatile");
 
     // cannot panic or print here
     loop {}

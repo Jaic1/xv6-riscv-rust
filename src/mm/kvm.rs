@@ -11,7 +11,7 @@ static mut KERNEL_PAGE_TABLE: PageTable = PageTable::empty();
 
 pub unsafe fn kvm_init_hart() {
     satp::write(KERNEL_PAGE_TABLE.as_satp());
-    asm!("sfence.vma zero, zero"::::"volatile");
+    llvm_asm!("sfence.vma zero, zero"::::"volatile");
 }
 
 pub unsafe fn kvm_init() {

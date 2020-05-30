@@ -1,5 +1,5 @@
 #![no_std]
-#![feature(asm)]
+#![feature(llvm_asm)]
 #![feature(global_asm)]
 #![feature(const_in_array_repeat_expressions)]
 #![feature(ptr_internals)]

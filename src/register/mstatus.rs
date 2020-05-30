@@ -5,13 +5,13 @@ use bit_field::BitField;
 #[inline]
 unsafe fn read() -> usize {
     let ret: usize;
-    asm!("csrr $0, mstatus":"=r"(ret):::"volatile");
+    llvm_asm!("csrr $0, mstatus":"=r"(ret):::"volatile");
     ret
 }
 
 #[inline]
 unsafe fn write(x: usize) {
-    asm!("csrw mstatus, $0"::"r"(x)::"volatile");
+    llvm_asm!("csrw mstatus, $0"::"r"(x)::"volatile");
 }
 
 /// Machine Previous Privilege Mode
