@@ -4,3 +4,7 @@
 pub const SV39FLAGLEN: usize = 10;
 // scheme flag
 pub const SATP_SV39: usize = 8usize << 60;
+
+// highest possible virtual address
+// one bit less than the maximum allowed by Sv39
+pub const MAXVA: usize = 1usize << (9 + 9 + 9 + 12 - 1);

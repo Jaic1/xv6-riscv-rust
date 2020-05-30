@@ -84,7 +84,7 @@ fn abort() -> ! {
 
 #[cfg(feature = "unit_test")]
 pub mod tests {
-    use crate::consts::param;
+    use crate::consts::NSMP;
     use crate::proc::cpu_id;
     use core::sync::atomic::{AtomicU8, Ordering};
 
@@ -94,7 +94,7 @@ pub mod tests {
         // use NSMP to synchronize testing pr's spinlock
         static NSMP: AtomicU8 = AtomicU8::new(0);
         NSMP.fetch_add(1, Ordering::Relaxed);
-        while NSMP.load(Ordering::Relaxed) != param::NSMP as u8 {}
+        while NSMP.load(Ordering::Relaxed) != NSMP as u8 {}
 
         for i in 0..10 {
             println!("println_mul_hart{}: hart {}", i, cpu_id);

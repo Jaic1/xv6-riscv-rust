@@ -1,7 +1,8 @@
 #![no_std]
 #![feature(asm)]
-#![feature(global_asm)]
+#![feature(const_fn)]
 #![feature(const_in_array_repeat_expressions)]
+#![feature(global_asm)]
 #![feature(ptr_internals)]
 #![allow(dead_code)]
 
@@ -11,10 +12,11 @@ extern crate bitflags;
 global_asm!(include_str!("asm/entry.S"));
 global_asm!(include_str!("asm/kernelvec.S"));
 
-mod console;
-mod consts;
 #[macro_use]
 mod printf;
+
+mod console;
+mod consts;
 mod mm;
 mod proc;
 mod register;
@@ -22,6 +24,7 @@ mod rmain;
 mod spinlock;
 mod start;
 mod string;
+mod trap;
 
 #[cfg(feature = "unit_test")]
 fn test_main_entry() {

@@ -105,7 +105,7 @@ consider the codes in *kernel.ld* above, see the comments.
 - [x] cpu abstraction and spinlock, add unit_test feature as temp solution
 - [x] us spin e lock to synchronize con print sole's ln, and refactor PRINT
 - [x] add kernel frame allocator(kalloc), fix writing bug in `timerinit`
-- [ ] ~~buddy system allocator~~
+- [ ] ~~buddy system allocator, slab~~
 - [x] use [Unique](https://doc.rust-lang.org/1.26.2/std/ptr/struct.Unique.html) in self-implemented Box to provide ownership, see [this](https://doc.rust-lang.org/nomicon/vec-layout.html) for example
 - [x] add Addr and PageTable
 - [x] add kvm for kernel, i.e., kernel paging

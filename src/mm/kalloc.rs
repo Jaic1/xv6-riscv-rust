@@ -85,16 +85,16 @@ pub unsafe fn kalloc() -> Option<*mut u8> {
 #[cfg(feature = "unit_test")]
 pub mod tests {
     use super::*;
-    use crate::consts::param;
-    use crate::mm::pagetable::PageTable;
+    use crate::consts;
     use crate::proc::cpu_id;
+    use crate::mm::pagetable::PageTable;
     use core::sync::atomic::{AtomicU8, Ordering};
 
     pub fn alloc_simo() {
         // use NSMP to synchronize testing pr's spinlock
         static NSMP: AtomicU8 = AtomicU8::new(0);
         NSMP.fetch_add(1, Ordering::Relaxed);
-        while NSMP.load(Ordering::Relaxed) != param::NSMP as u8 {}
+        while NSMP.load(Ordering::Relaxed) != NSMP as u8 {}
 
         let id = unsafe { cpu_id() };
 

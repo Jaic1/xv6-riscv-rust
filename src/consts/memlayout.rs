@@ -17,7 +17,7 @@
 //! end -- start of kernel page allocation area
 //! PHYSTOP -- end RAM used by the kernel
 
-use crate::consts::PGSIZE;
+use crate::consts::{MAXVA, PGSIZE};
 
 // local interrupt controller, which contains the timer.
 pub const CLINT: usize = 0x2000000;
@@ -42,3 +42,7 @@ pub const PLIC_MAP_SIZE: usize = 0x400000;
 // from physical address 0x80000000 to PHYSTOP.
 pub const KERNBASE: usize = 0x80000000;
 pub const PHYSTOP: usize = KERNBASE + 128 * 1024 * 1024;
+
+// map the trampoline page to the highest address,
+// in both user and kernel space.
+pub const TRAMPOLINE: usize = MAXVA - PGSIZE;

@@ -1,7 +1,8 @@
-use core::sync::atomic::{fence, AtomicBool, Ordering};
+use core::sync::atomic::{AtomicBool, Ordering};
 
+use crate::proc::{cpu_id, my_cpu};
 use crate::mm::{kinit, kvm_init, kvm_init_hart};
-use crate::proc::cpu_id;
+use crate::proc::proc_init;
 
 /// Used by hart 0 to communicate with other harts.
 /// When hart 0 finished some initial work,
@@ -12,33 +13,33 @@ use crate::proc::cpu_id;
 static STARTED: AtomicBool = AtomicBool::new(false);
 
 /// start() jumps here in supervisor mode on all CPUs.
-pub fn rust_main() -> ! {
-    unsafe {
-        if cpu_id() == 0 {
-            crate::console::consoleinit();
-            println!();
-            println!("xv6-riscv-rust is booting");
-            println!();
-            kinit();
-            kvm_init(); // init kernel page table
-            kvm_init_hart(); // trun on paging
+pub unsafe fn rust_main() -> ! {
+    if cpu_id() == 0 {
+        crate::console::consoleinit();
+        println!();
+        println!("xv6-riscv-rust is booting");
+        println!();
+        kinit();
+        kvm_init(); // init kernel page table
+        proc_init(); // process table
+        kvm_init_hart(); // trun on paging
 
-            // TODO - init other things
+        // TODO - init other things
 
-            fence(Ordering::SeqCst);
-            STARTED.store(true, Ordering::Relaxed);
-        } else {
-            while !STARTED.load(Ordering::Relaxed) {}
-            fence(Ordering::SeqCst);
-            println!("hart {} starting", cpu_id());
-            kvm_init_hart(); // turn on paging
+        STARTED.store(true, Ordering::SeqCst);
+    } else {
+        while !STARTED.load(Ordering::SeqCst) {}
 
-            // TODO - init other things
-        }
+        println!("hart {} starting", cpu_id());
+        kvm_init_hart(); // turn on paging
+
+        // TODO - init other things
+        loop {}
     }
 
     #[cfg(feature = "unit_test")]
-    super::test_main_entry();
+        super::test_main_entry();
 
-    panic!("rust_main: end of hart {}", unsafe { cpu_id() });
+    let c = my_cpu();
+    c.scheduler();
 }

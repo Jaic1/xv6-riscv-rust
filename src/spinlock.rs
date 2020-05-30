@@ -6,8 +6,8 @@ use core::cell::{Cell, UnsafeCell};
 use core::ops::{Deref, DerefMut, Drop};
 use core::sync::atomic::{fence, AtomicBool, Ordering};
 
-use crate::proc;
 use crate::register::sstatus;
+use crate::proc::{self, cpu_id};
 
 pub struct SpinLock<T: ?Sized> {
     // for debugging
@@ -42,7 +42,7 @@ impl<T: ?Sized> SpinLock<T> {
         let r: bool;
         push_off();
         unsafe {
-            r = self.lock.load(Ordering::Relaxed) && (self.cpu_id.get() == proc::cpu_id() as isize);
+            r = self.lock.load(Ordering::Relaxed) && (self.cpu_id.get() == cpu_id() as isize);
         }
         pop_off();
         r
@@ -56,7 +56,7 @@ impl<T: ?Sized> SpinLock<T> {
         while self.lock.compare_and_swap(false, true, Ordering::Acquire) {}
         fence(Ordering::SeqCst);
         unsafe {
-            self.cpu_id.set(proc::cpu_id() as isize);
+            self.cpu_id.set(cpu_id() as isize);
         }
     }
 

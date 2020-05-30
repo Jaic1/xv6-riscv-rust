@@ -1,7 +1,7 @@
 pub use addr::{Addr, PhysAddr, VirtAddr};
 pub use boxed::{Box, PageAligned};
 pub use kalloc::{kalloc, kfree, kinit};
-pub use kvm::{kvm_init, kvm_init_hart};
+pub use kvm::{kvm_init, kvm_init_hart, kvm_map};
 pub use pagetable::{PageTable, PteFlag};
 
 mod addr;

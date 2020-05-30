@@ -74,7 +74,7 @@ pub unsafe fn kvm_init() {
     // kvmmap(TRAMPOLINE, (uint64)trampoline, PGSIZE, PTE_R | PTE_X);
 }
 
-unsafe fn kvm_map(va: VirtAddr, pa: PhysAddr, size: usize, perm: PteFlag) {
+pub unsafe fn kvm_map(va: VirtAddr, pa: PhysAddr, size: usize, perm: PteFlag) {
     println!(
         "kvm_map: va={:#x}, pa={:#x}, size={:#x}",
         va.as_usize(),
