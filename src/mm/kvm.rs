@@ -1,4 +1,4 @@
-use core::convert::TryFrom;
+use core::convert::{TryFrom, Into};
 
 use crate::consts::{
     CLINT, CLINT_MAP_SIZE, KERNBASE, PHYSTOP, PLIC, PLIC_MAP_SIZE, UART0, UART0_MAP_SIZE, VIRTIO0,
@@ -17,36 +17,38 @@ pub unsafe fn kvm_init_hart() {
 pub unsafe fn kvm_init() {
     // uart registers
     kvm_map(
-        VirtAddr::try_from(UART0).unwrap(),
-        PhysAddr::try_from(UART0).unwrap(),
+        VirtAddr::from(UART0),
+        PhysAddr::from(UART0),
         UART0_MAP_SIZE,
         PteFlag::R | PteFlag::W,
     );
 
     // virtio mmio disk interface
     kvm_map(
-        VirtAddr::try_from(VIRTIO0).unwrap(),
-        PhysAddr::try_from(VIRTIO0).unwrap(),
+        VirtAddr::from(VIRTIO0),
+        PhysAddr::from(VIRTIO0),
         VIRTIO0_MAP_SIZE,
         PteFlag::R | PteFlag::W,
     );
 
     // CLINT
     kvm_map(
-        VirtAddr::try_from(CLINT).unwrap(),
-        PhysAddr::try_from(CLINT).unwrap(),
+        VirtAddr::from(CLINT),
+        PhysAddr::from(CLINT),
         CLINT_MAP_SIZE,
         PteFlag::R | PteFlag::W,
     );
 
     // PLIC
     kvm_map(
-        VirtAddr::try_from(PLIC).unwrap(),
-        PhysAddr::try_from(PLIC).unwrap(),
+        VirtAddr::from(PLIC),
+        PhysAddr::from(PLIC),
         PLIC_MAP_SIZE,
         PteFlag::R | PteFlag::W,
     );
 
+    // etext exported out of kernel.ld
+    // supposed to be page(0x1000) aligned
     extern "C" {
         fn etext();
     }
@@ -54,9 +56,9 @@ pub unsafe fn kvm_init() {
 
     // map kernel text executable and read-only.
     kvm_map(
-        VirtAddr::try_from(KERNBASE).unwrap(),
-        PhysAddr::try_from(KERNBASE).unwrap(),
-        etext - KERNBASE,
+        VirtAddr::from(KERNBASE),
+        PhysAddr::from(KERNBASE),
+        etext - Into::<usize>::into(KERNBASE),
         PteFlag::R | PteFlag::X,
     );
 
@@ -64,7 +66,7 @@ pub unsafe fn kvm_init() {
     kvm_map(
         VirtAddr::try_from(etext).unwrap(),
         PhysAddr::try_from(etext).unwrap(),
-        PHYSTOP - etext,
+        Into::<usize>::into(PHYSTOP) - etext,
         PteFlag::R | PteFlag::W,
     );
 

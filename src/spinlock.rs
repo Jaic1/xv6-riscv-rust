@@ -7,7 +7,7 @@ use core::ops::{Deref, DerefMut, Drop};
 use core::sync::atomic::{fence, AtomicBool, Ordering};
 
 use crate::register::sstatus;
-use crate::proc::{self, cpu_id};
+use crate::process::{self, cpu_id};
 
 pub struct SpinLock<T: ?Sized> {
     // for debugging
@@ -48,16 +48,16 @@ impl<T: ?Sized> SpinLock<T> {
         r
     }
 
-    fn acquire_lock(&self) {
+    /// Temporary solution for locking scheme across threads,
+    /// i.e., lock -> context switch -> unlock
+    pub unsafe fn acquire_lock(&self) {
         push_off();
         if self.holding() {
             panic!("acquire");
         }
         while self.lock.compare_and_swap(false, true, Ordering::Acquire) {}
         fence(Ordering::SeqCst);
-        unsafe {
-            self.cpu_id.set(cpu_id() as isize);
-        }
+        self.cpu_id.set(cpu_id() as isize);
     }
 
     /// Locks the spinlock and returns a guard.
@@ -77,14 +77,14 @@ impl<T: ?Sized> SpinLock<T> {
     /// }
     /// ```
     pub fn lock(&self) -> SpinLockGuard<T> {
-        self.acquire_lock();
+        unsafe {self.acquire_lock();}
         SpinLockGuard {
             spin_lock: &self,
             data: unsafe { &mut *self.data.get() },
         }
     }
 
-    fn release_lock(&self) {
+    pub unsafe fn release_lock(&self) {
         if !self.holding() {
             panic!("release");
         }
@@ -101,7 +101,7 @@ impl<T: ?Sized> SpinLock<T> {
 fn push_off() {
     let old: bool = sstatus::intr_get();
     sstatus::intr_off();
-    proc::push_off(old);
+    process::push_off(old);
 }
 
 fn pop_off() {
@@ -110,7 +110,7 @@ fn pop_off() {
     }
     // a little difference from xv6-riscv
     // optional intr_on() moved to proc::pop_off()
-    proc::pop_off();
+    process::pop_off();
 }
 
 pub struct SpinLockGuard<'a, T: ?Sized + 'a> {
@@ -135,7 +135,7 @@ impl<'a, T: ?Sized> Drop for SpinLockGuard<'a, T> {
     /// The dropping of the SpinLockGuard will call spinlock's release_lock(),
     /// through its reference to its original spinlock.
     fn drop(&mut self) {
-        self.spin_lock.release_lock();
+        unsafe {self.spin_lock.release_lock();}
     }
 }
 

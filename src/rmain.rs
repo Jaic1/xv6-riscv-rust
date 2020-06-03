@@ -1,8 +1,7 @@
 use core::sync::atomic::{AtomicBool, Ordering};
 
-use crate::proc::{cpu_id, my_cpu};
+use crate::process::{PROC_MANAGER, cpu_id, my_cpu};
 use crate::mm::{kinit, kvm_init, kvm_init_hart};
-use crate::proc::proc_init;
 
 /// Used by hart 0 to communicate with other harts.
 /// When hart 0 finished some initial work,
@@ -21,10 +20,10 @@ pub unsafe fn rust_main() -> ! {
         println!();
         kinit();
         kvm_init(); // init kernel page table
-        proc_init(); // process table
+        PROC_MANAGER.proc_init(); // process table
         kvm_init_hart(); // trun on paging
 
-        // TODO - init other things
+        // TODO - user_init();
 
         STARTED.store(true, Ordering::SeqCst);
     } else {
@@ -40,6 +39,7 @@ pub unsafe fn rust_main() -> ! {
     #[cfg(feature = "unit_test")]
         super::test_main_entry();
 
+    // each cpu's lifetime start here?
     let c = my_cpu();
     c.scheduler();
 }

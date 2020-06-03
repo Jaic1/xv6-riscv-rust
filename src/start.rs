@@ -1,3 +1,5 @@
+use core::convert::Into;
+
 use crate::consts::{CLINT_MTIMECMP, NCPU};
 use crate::register::{
     clint, medeleg, mepc, mhartid, mideleg, mie, mscratch, mstatus, mtvec, satp, tp,
@@ -53,7 +55,7 @@ unsafe fn timerinit() {
     // scratch[4] : address of CLINT MTIMECMP register.
     // scratch[5] : desired interval (in cycles) between timer interrupts.
     let offset = 32 * id;
-    MSCRATCH0[offset + 4] = CLINT_MTIMECMP + 8 * id;
+    MSCRATCH0[offset + 4] = 8 * id + Into::<usize>::into(CLINT_MTIMECMP);
     MSCRATCH0[offset + 5] = interval as usize;
     mscratch::write((MSCRATCH0.as_ptr() as usize) + offset * core::mem::size_of::<usize>());
 

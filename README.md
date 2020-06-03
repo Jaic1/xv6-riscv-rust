@@ -99,6 +99,12 @@ You can try it by commenting `.section .text` out and then use objdump to see wh
 ```
 consider the codes in *kernel.ld* above, see the comments.
 
+### VirtAddr & PhysAddr
+when converting usize to VirtAddr & PhysAddr, use from or try_from?  
+seems like From and TryFrom can not be both implemented for <T, U>
+so I choose to add a new type for trusted address, i.e.,
+`impl From<ConstAddr> for VirtAddr` & `impl TryFrom<usize> for VirtAddr`(same for `PhysAddr`)
+
 ## Path
 - [x] porting console and uart to support printf, p.s., smp = 1
 - [x] add register abstraction to support start using mret to return to rust_main
@@ -109,10 +115,11 @@ consider the codes in *kernel.ld* above, see the comments.
 - [x] use [Unique](https://doc.rust-lang.org/1.26.2/std/ptr/struct.Unique.html) in self-implemented Box to provide ownership, see [this](https://doc.rust-lang.org/nomicon/vec-layout.html) for example
 - [x] add Addr and PageTable
 - [x] add kvm for kernel, i.e., kernel paging
-- [ ] proc or cpu abstraction
+- [ ] proc or cpu basic abstraction(hard time playing around lock and borrow checker)
 
 ## TODO
 - [ ] `mul a0, a0, a1` is not an error
+- [ ] pass `fork_ret`
 
 ## Useful Reference
 [Why implementing Send trait for Mutex?](https://users.rust-lang.org/t/why-we-implement-send-trait-for-mutex/39065)  
@@ -121,3 +128,4 @@ consider the codes in *kernel.ld* above, see the comments.
 [take ownership from nothing](https://stackoverflow.com/questions/57225328/how-to-take-ownership-of-a-c-pointer-in-rust-and-drop-it-appropriately)  
 [Unique issue](https://www.reddit.com/r/rust/comments/bcb0dh/replacement_for_stdptrunique_and_stdptrshared/)  
 [out of memory](https://www.reddit.com/r/rust/comments/279k7i/whats_rusts_mechanism_for_recovering_from_say/)  
+[integrate Mutex and MutexGuard](https://users.rust-lang.org/t/integrate-mutex-and-mutexguard-into-a-struct/43735)  

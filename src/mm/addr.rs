@@ -1,7 +1,7 @@
 use core::convert::TryFrom;
 use core::result::Result;
 
-use crate::consts::{PGMASK, PGMASKLEN, PGSHIFT, PGSIZE, PHYSTOP};
+use crate::consts::{PGMASK, PGMASKLEN, PGSHIFT, PGSIZE, PHYSTOP, MAXVA, ConstAddr};
 
 pub trait Addr {
     fn data_ref(&self) -> &usize;
@@ -29,7 +29,7 @@ pub trait Addr {
     }
 }
 
-#[repr(transparent)]
+#[repr(C)]
 #[derive(Copy, Clone, Eq, PartialEq)]
 pub struct PhysAddr(usize);
 
@@ -52,18 +52,18 @@ impl TryFrom<usize> for PhysAddr {
         if addr % PGSIZE != 0 {
             return Err("PhysAddr addr not aligned");
         }
-        if addr > PHYSTOP {
+        if addr > PHYSTOP.into() {
             return Err("PhysAddr addr bigger than PHYSTOP");
         }
         Ok(PhysAddr(addr))
     }
 }
 
-// impl From<usize> for PhysAddr {
-//     fn from(addr: usize) -> Self {
-//         Self(addr)
-//     }
-// }
+impl From<ConstAddr> for PhysAddr {
+    fn from(const_addr: ConstAddr) -> Self {
+        Self(const_addr.into())
+    }
+}
 
 /// Wrapper of usize to represent the virtual address
 ///
@@ -73,7 +73,7 @@ impl TryFrom<usize> for PhysAddr {
 /// MAXVA is actually one bit less than the max allowed by
 /// Sv39, to avoid having to sign-extend virtual addresses
 /// that have the high bit set.
-#[repr(transparent)]
+#[repr(C)]
 #[derive(Copy, Clone, Eq, PartialEq)]
 pub struct VirtAddr(usize);
 
@@ -102,7 +102,7 @@ impl TryFrom<usize> for VirtAddr {
     type Error = &'static str;
 
     fn try_from(addr: usize) -> Result<Self, Self::Error> {
-        if addr >> 38 != 0 {
+        if addr >= MAXVA.into() {
             Err("value for VirtAddr should be smaller than 1<<38")
         } else {
             Ok(Self(addr))
@@ -110,8 +110,8 @@ impl TryFrom<usize> for VirtAddr {
     }
 }
 
-// impl From<usize> for VirtAddr {
-//     fn from(addr: usize) -> Self {
-//         Self(addr)
-//     }
-// }
+impl From<ConstAddr> for VirtAddr {
+    fn from(const_addr: ConstAddr) -> Self {
+        Self(const_addr.into())
+    }
+}

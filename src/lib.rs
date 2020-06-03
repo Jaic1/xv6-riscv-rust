@@ -11,6 +11,7 @@ extern crate bitflags;
 
 global_asm!(include_str!("asm/entry.S"));
 global_asm!(include_str!("asm/kernelvec.S"));
+global_asm!(include_str!("asm/swtch.S"));
 
 #[macro_use]
 mod printf;
@@ -18,7 +19,7 @@ mod printf;
 mod console;
 mod consts;
 mod mm;
-mod proc;
+mod process;
 mod register;
 mod rmain;
 mod spinlock;

@@ -1,9 +1,11 @@
-use crate::consts::UART0;
 use core::ptr;
+use core::convert::Into;
+
+use crate::consts::UART0;
 
 macro_rules! Reg {
     ($reg: expr) => {
-        UART0 + $reg
+        Into::<usize>::into(UART0) + $reg
     };
 }
 

@@ -17,32 +17,35 @@
 //! end -- start of kernel page allocation area
 //! PHYSTOP -- end RAM used by the kernel
 
-use crate::consts::{MAXVA, PGSIZE};
+use super::*;
 
-// local interrupt controller, which contains the timer.
-pub const CLINT: usize = 0x2000000;
+/// local interrupt controller, which contains the timer.
+pub const CLINT: ConstAddr = ConstAddr(0x2000000);
 pub const CLINT_MAP_SIZE: usize = 0x10000;
-pub const CLINT_MTIMECMP: usize = CLINT + 0x4000;
-pub const CLINT_MTIME: usize = CLINT + 0xbff8;
+pub const CLINT_MTIMECMP: ConstAddr = CLINT.const_add(0x4000);
+pub const CLINT_MTIME: ConstAddr = CLINT.const_add(0xbff8);
 
-// qemu puts UART registers here in physical memory.
-pub const UART0: usize = 0x10000000;
+/// qemu puts UART registers here in physical memory.
+pub const UART0: ConstAddr = ConstAddr(0x10000000);
 pub const UART0_MAP_SIZE: usize = PGSIZE;
 
-// virtio mmio interface
-pub const VIRTIO0: usize = 0x10001000;
+/// virtio mmio interface
+pub const VIRTIO0: ConstAddr = ConstAddr(0x10001000);
 pub const VIRTIO0_MAP_SIZE: usize = PGSIZE;
 
-// qemu puts programmable interrupt controller here.
-pub const PLIC: usize = 0x0c000000;
+/// qemu puts programmable interrupt controller here.
+pub const PLIC: ConstAddr = ConstAddr(0x0c000000);
 pub const PLIC_MAP_SIZE: usize = 0x400000;
 
-// the kernel expects there to be RAM
-// for use by the kernel and user pages
-// from physical address 0x80000000 to PHYSTOP.
-pub const KERNBASE: usize = 0x80000000;
-pub const PHYSTOP: usize = KERNBASE + 128 * 1024 * 1024;
+/// the kernel expects there to be RAM
+/// for use by the kernel and user pages
+/// from physical address 0x80000000 to PHYSTOP.
+pub const KERNBASE: ConstAddr = ConstAddr(0x80000000);
+pub const PHYSTOP: ConstAddr = KERNBASE.const_add(128 * 1024 * 1024);
 
-// map the trampoline page to the highest address,
-// in both user and kernel space.
-pub const TRAMPOLINE: usize = MAXVA - PGSIZE;
+/// map the trampoline page to the highest address,
+/// in both user and kernel space.
+pub const TRAMPOLINE: ConstAddr = MAXVA.const_sub(PGSIZE);
+
+/// trapframe is below the trampoline
+pub const TRAPFRAME: ConstAddr = TRAMPOLINE.const_sub(PGSIZE);
