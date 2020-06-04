@@ -117,6 +117,13 @@ impl ProcManager {
 
         None
     }
+
+    /// Set up first process
+    pub unsafe fn user_init(&mut self) {
+        let p = self.alloc_proc().expect("user_init: all process should be unused");
+        p.user_init();
+        p.lock.release_lock();
+    }
 }
 
 /// A fork child's very first scheduling by scheduler()
@@ -138,7 +145,7 @@ unsafe fn fork_ret() -> ! {
 
     // TODO
     // user_trap_ret();
-    panic!("??");
+    panic!("in fork_ret");
 }
 
 #[inline]

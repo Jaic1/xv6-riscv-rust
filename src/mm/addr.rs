@@ -102,7 +102,7 @@ impl TryFrom<usize> for VirtAddr {
     type Error = &'static str;
 
     fn try_from(addr: usize) -> Result<Self, Self::Error> {
-        if addr >= MAXVA.into() {
+        if addr > MAXVA.into() {
             Err("value for VirtAddr should be smaller than 1<<38")
         } else {
             Ok(Self(addr))

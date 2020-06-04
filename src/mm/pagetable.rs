@@ -1,9 +1,10 @@
 use core::convert::TryFrom;
 
 use crate::consts::{PGSHIFT, SATP_SV39, SV39FLAGLEN};
-use crate::mm::Box;
-use crate::mm::PageAligned;
-use crate::mm::{Addr, PhysAddr, VirtAddr};
+
+use super::Box;
+use super::PageAligned;
+use super::{Addr, PhysAddr, VirtAddr};
 
 bitflags! {
     pub struct PteFlag: usize {
@@ -150,5 +151,24 @@ impl PageTable {
             }
         }
         unsafe { Some(&mut (*page_table).data[va.page_num(0)]) }
+    }
+
+    /// Create a page table for a given process,
+    /// with no user pages, but with trampoline pages.
+    pub fn uvm_create() -> Box<PageTable> {
+        match Box::<PageTable>::new() {
+            Some(mut pagetable) => {
+                pagetable.clear();
+                pagetable
+            },
+            None => {
+                panic!("uvm_create: out of memory");
+            },
+        }
+    }
+
+    /// TODO - uvm_init
+    pub fn uvm_init(&mut self) {
+        
     }
 }

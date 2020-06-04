@@ -7,7 +7,7 @@ while minor differences go to the document/comment in relevant source files.
 1. can only compile on target triple `riscv64gc-unknown-none-elf`,  
 refer *.cargo/config* for detail
 
-2. `cargo run` will write things below to the console in the end, which is expected.
+2. `cargo run` may write things below to the console in the end, which is expected.
 ```
 panickeadni at ckpead niatck 'e'd art 'rrusust_t_mamainin: :enu esd t_main: end of hart 0', src/rmain.rs:34:5
 nd of hart 2',o f src/rmain.rs:34:5
@@ -115,11 +115,13 @@ so I choose to add a new type for trusted address, i.e.,
 - [x] use [Unique](https://doc.rust-lang.org/1.26.2/std/ptr/struct.Unique.html) in self-implemented Box to provide ownership, see [this](https://doc.rust-lang.org/nomicon/vec-layout.html) for example
 - [x] add Addr and PageTable
 - [x] add kvm for kernel, i.e., kernel paging
-- [ ] proc or cpu basic abstraction(hard time playing around lock and borrow checker)
+- [x] cpu and proc basic abstraction(hard time playing around lock and borrow checker)
+- [ ] add trap handler
+- [ ] start to add fs?
 
 ## TODO
 - [ ] `mul a0, a0, a1` is not an error
-- [ ] pass `fork_ret`
+- [ ] add kernel trap handler, typically for supervisor interrupt, see [kernelvec.S](./src/asm/kernelvec.S)
 
 ## Useful Reference
 [Why implementing Send trait for Mutex?](https://users.rust-lang.org/t/why-we-implement-send-trait-for-mutex/39065)  

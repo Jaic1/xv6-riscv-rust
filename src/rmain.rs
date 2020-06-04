@@ -22,8 +22,7 @@ pub unsafe fn rust_main() -> ! {
         kvm_init(); // init kernel page table
         PROC_MANAGER.proc_init(); // process table
         kvm_init_hart(); // trun on paging
-
-        // TODO - user_init();
+        PROC_MANAGER.user_init();
 
         STARTED.store(true, Ordering::SeqCst);
     } else {

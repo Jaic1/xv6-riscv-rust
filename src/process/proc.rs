@@ -4,7 +4,7 @@ use core::convert::TryFrom;
 
 use crate::consts::{TRAMPOLINE, TRAPFRAME, PGSIZE};
 use crate::spinlock::SpinLock;
-use crate::mm::{Box, PageTable, uvm_create, VirtAddr, PhysAddr, PteFlag};
+use crate::mm::{Box, PageTable, VirtAddr, PhysAddr, PteFlag};
 
 use super::{Context, TrapFrame, fork_ret};
 
@@ -48,7 +48,7 @@ impl Proc {
             fn trampoline();
         }
 
-        let mut pagetable = uvm_create();
+        let mut pagetable = PageTable::uvm_create();
         pagetable.map_pages(VirtAddr::from(TRAMPOLINE), PGSIZE,
             PhysAddr::try_from(trampoline as usize).unwrap(), PteFlag::R | PteFlag::X)
             .expect("user proc table mapping trampoline");
@@ -75,5 +75,12 @@ impl Proc {
     /// Return the process's mutable reference of context
     pub fn get_context_mut(&mut self) -> &mut Context {
         &mut self.context
+    }
+
+    /// Called by ProcManager's user_init,
+    /// only be called once
+    /// TODO - copy used code and sth else
+    pub fn user_init(&mut self) {
+        self.state = ProcState::RUNNABLE;
     }
 }
