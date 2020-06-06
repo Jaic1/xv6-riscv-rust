@@ -1,38 +1,39 @@
 //! sstatus register
 
-const SIE: usize = 1 << 1; // supervisor interrupt enable
+const SIE: usize = 1 << 1;  // supervisor interrupt enable
+const SPP: usize = 1 << 8;  // previous mode, is from supervisor?
 
 #[inline]
-unsafe fn read() -> usize {
+pub fn read() -> usize {
     let ret: usize;
-    llvm_asm!("csrr $0, sstatus":"=r"(ret):::"volatile");
+    unsafe {llvm_asm!("csrr $0, sstatus":"=r"(ret):::"volatile");}
     ret
 }
 
 #[inline]
-unsafe fn write(x: usize) {
-    llvm_asm!("csrw sstatus, $0"::"r"(x)::"volatile");
+pub fn write(x: usize) {
+    unsafe {llvm_asm!("csrw sstatus, $0"::"r"(x)::"volatile");}
 }
 
 /// set SIE to enable device interrupts
 /// still need to set relevant bit in sie register
 pub fn intr_on() {
-    unsafe {
-        write(read() | SIE);
-    }
+    write(read() | SIE);
 }
 
 /// disable device interrupts
 pub fn intr_off() {
-    unsafe {
-        write(read() & !SIE);
-    }
+    write(read() & !SIE);
 }
 
 /// are device interrupts enabled?
 pub fn intr_get() -> bool {
-    unsafe {
-        let x = read();
-        (x & SIE) != 0
-    }
+    let x = read();
+    (x & SIE) != 0
+}
+
+/// check is the previous mode from supervisor
+#[inline]
+pub fn is_from_supervisor() -> bool {
+    (read() & SPP) != 0
 }

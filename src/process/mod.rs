@@ -119,6 +119,8 @@ impl ProcManager {
     }
 
     /// Set up first process
+    /// Only called once in rust_main(),
+    /// which can guarantee the init proc's index at table is 0
     pub unsafe fn user_init(&mut self) {
         let p = self.alloc_proc().expect("user_init: all process should be unused");
         p.user_init();

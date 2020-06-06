@@ -5,7 +5,9 @@ pub mod mie;
 pub mod mstatus;
 pub mod satp;
 pub mod sie;
+pub mod sip;
 pub mod sstatus;
+pub mod scause;
 
 /// medeleg
 pub mod medeleg {
@@ -61,5 +63,38 @@ pub mod tp {
 
     pub unsafe fn write(tp: usize) {
         llvm_asm!("mv tp, $0"::"r"(tp)::"volatile");
+    }
+}
+
+/// stvec
+pub mod stvec {
+    pub unsafe fn write(stvec: usize) {
+        llvm_asm!("csrw stvec, $0"::"r"(stvec)::"volatile");
+    }
+}
+
+/// sepc
+/// machine exception program counter, holds the
+/// instruction address to which a return from
+/// exception will go.(from xv6-riscv)
+pub mod sepc {
+    pub fn read() -> usize {
+        let ret: usize;
+        unsafe {llvm_asm!("csrr $0, sepc":"=r"(ret):::"volatile");}
+        ret
+    }
+
+    pub fn write(sepc: usize) {
+        unsafe {llvm_asm!("csrw sepc, $0"::"r"(sepc)::"volatile");}
+    }
+}
+
+/// stval
+/// contains supervisor trap value
+pub mod stval {
+    pub fn read() -> usize {
+        let ret: usize;
+        unsafe {llvm_asm!("csrr $0, stval":"=r"(ret):::"volatile");}
+        ret
     }
 }

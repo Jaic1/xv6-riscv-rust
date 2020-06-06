@@ -73,6 +73,64 @@ impl<'a> Cpu<'a> {
             }
         }
     }
+
+    /// Switch back to scheduler.
+    /// see more in xv6-riscv
+    unsafe fn sched(&mut self) {
+        extern "C" {
+            fn swtch(old: *mut Context, new: *mut Context);
+        }
+
+        // should not be interruptible
+        if sstatus::intr_get() {
+            panic!("sched: interruptible");
+        }
+
+        // only holding self.proc's lock
+        if self.noff != 1 {
+            panic!("sched: locks")
+        }
+
+        // not using match
+        // because that will move the mut reference out
+        if self.proc.is_none() {
+            panic!("sched: cpu {} have no proc reference", cpu_id());
+        } else {
+            let p = self.proc.as_mut().unwrap();
+            if !p.lock.holding() {
+                panic!("sched: not holding proc's lock");
+            }
+            if p.state == ProcState::RUNNING {
+                panic!("sched: current proc is still running");
+            }
+
+            let intena = self.intena;
+            swtch(p.get_context_mut() as *mut Context,
+                &mut self.scheduler as *mut Context);
+            self.intena = intena;
+        }
+    }
+
+    /// Give up the current runing process in this cpu
+    /// Interrupt should be off
+    /// The referenced process's state should be running
+    /// Change the name to yielding, because `yield` is a key word
+    pub fn yielding(&mut self) {
+        // not using match
+        // because that will move the mut reference out
+        // ignore none case in case the cpu is scheduling
+        if self.proc.is_some() {
+            // note: p is the copy of &'a mut Proc
+            //      and self.proc may refer others in the middle
+            let p = self.proc.as_mut().unwrap();
+            unsafe {p.lock.acquire_lock();}
+            assert_eq!(p.state, ProcState::RUNNING);
+            p.state = ProcState::RUNNABLE;
+            unsafe {self.sched();}
+            let p = self.proc.as_mut().unwrap();
+            unsafe {p.lock.release_lock();}
+        }
+    }
 }
 
 /// Called in spinlock's push_off().
@@ -107,6 +165,7 @@ pub fn pop_off() {
 /// enable device interrupts
 #[inline]
 fn intr_on() {
+    
     sie::intr_on();
     sstatus::intr_on();
 }

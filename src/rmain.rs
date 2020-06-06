@@ -2,6 +2,7 @@ use core::sync::atomic::{AtomicBool, Ordering};
 
 use crate::process::{PROC_MANAGER, cpu_id, my_cpu};
 use crate::mm::{kinit, kvm_init, kvm_init_hart};
+use crate::trap::trap_init_hart;
 
 /// Used by hart 0 to communicate with other harts.
 /// When hart 0 finished some initial work,
@@ -22,7 +23,9 @@ pub unsafe fn rust_main() -> ! {
         kvm_init(); // init kernel page table
         PROC_MANAGER.proc_init(); // process table
         kvm_init_hart(); // trun on paging
-        PROC_MANAGER.user_init();
+        trap_init_hart();   // install kernel trap vector
+
+        PROC_MANAGER.user_init();   // first user process
 
         STARTED.store(true, Ordering::SeqCst);
     } else {
@@ -30,6 +33,7 @@ pub unsafe fn rust_main() -> ! {
 
         println!("hart {} starting", cpu_id());
         kvm_init_hart(); // turn on paging
+        trap_init_hart();   // install kernel trap vector
 
         // TODO - init other things
         loop {}

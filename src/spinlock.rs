@@ -38,12 +38,10 @@ impl<T> SpinLock<T> {
 }
 
 impl<T: ?Sized> SpinLock<T> {
-    fn holding(&self) -> bool {
+    pub unsafe fn holding(&self) -> bool {
         let r: bool;
         push_off();
-        unsafe {
-            r = self.lock.load(Ordering::Relaxed) && (self.cpu_id.get() == cpu_id() as isize);
-        }
+        r = self.lock.load(Ordering::Relaxed) && (self.cpu_id.get() == cpu_id() as isize);
         pop_off();
         r
     }

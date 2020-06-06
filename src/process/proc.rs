@@ -8,6 +8,7 @@ use crate::mm::{Box, PageTable, VirtAddr, PhysAddr, PteFlag};
 
 use super::{Context, TrapFrame, fork_ret};
 
+#[derive(Eq, PartialEq, Debug)]
 pub enum ProcState { UNUSED, SLEEPING, RUNNABLE, RUNNING, ZOMBIE }
 
 pub struct Proc {
@@ -17,7 +18,8 @@ pub struct Proc {
     pub state: ProcState,
     pub pid: usize,
 
-    // lock need not be held
+    // lock need not be held, or
+    // lock already be held
     kstack: usize,
     pagetable: Option<Box<PageTable>>,
     tf: *mut TrapFrame,

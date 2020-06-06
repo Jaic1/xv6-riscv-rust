@@ -116,12 +116,12 @@ so I choose to add a new type for trusted address, i.e.,
 - [x] add Addr and PageTable
 - [x] add kvm for kernel, i.e., kernel paging
 - [x] cpu and proc basic abstraction(hard time playing around lock and borrow checker)
-- [ ] add trap handler
+- [x] add kernel trap handler(panic at `fork_ret`)
+- [ ] add user trap handler and way to user space
 - [ ] start to add fs?
 
 ## TODO
 - [ ] `mul a0, a0, a1` is not an error
-- [ ] add kernel trap handler, typically for supervisor interrupt, see [kernelvec.S](./src/asm/kernelvec.S)
 
 ## Useful Reference
 [Why implementing Send trait for Mutex?](https://users.rust-lang.org/t/why-we-implement-send-trait-for-mutex/39065)  
