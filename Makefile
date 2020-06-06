@@ -12,7 +12,9 @@ qemu-gdb:
 	$(QEMU) $(QEMUOPTS) -S $(QEMUGDB)
 
 asm:
+	cargo build
 	$(OBJDUMP) -S $(KERNEL) > kernel.S
 
 clean:
 	rm -rf kernel.S
+	cargo clean

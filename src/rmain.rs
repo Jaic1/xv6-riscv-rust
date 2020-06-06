@@ -35,7 +35,7 @@ pub unsafe fn rust_main() -> ! {
         kvm_init_hart(); // turn on paging
         trap_init_hart();   // install kernel trap vector
 
-        // TODO - init other things
+        // LTODO - init other things
         loop {}
     }
 

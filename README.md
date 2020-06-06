@@ -117,10 +117,11 @@ so I choose to add a new type for trusted address, i.e.,
 - [x] add kvm for kernel, i.e., kernel paging
 - [x] cpu and proc basic abstraction(hard time playing around lock and borrow checker)
 - [x] add kernel trap handler(panic at `fork_ret`)
-- [ ] add user trap handler and way to user space
+- [x] add user trap returner and way to user space
+- [ ] add user code
 - [ ] start to add fs?
 
-## TODO
+## LTODO
 - [ ] `mul a0, a0, a1` is not an error
 
 ## Useful Reference

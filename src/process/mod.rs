@@ -3,6 +3,7 @@ use core::convert::TryFrom;
 use crate::consts::{NPROC, PGSIZE, TRAMPOLINE};
 use crate::mm::{kalloc, kvm_map, PhysAddr, PteFlag, VirtAddr};
 use crate::spinlock::SpinLock;
+use crate::trap::user_trap_ret;
 
 pub use cpu::{cpu_id, push_off, pop_off, my_cpu};
 
@@ -136,18 +137,17 @@ unsafe fn fork_ret() -> ! {
     static mut FIRST: bool = true;
     
     // Still holding p->lock from scheduler
-    // TODO
+    my_cpu().release_proc();
     
     if FIRST {
         // File system initialization
-        // TODO
+        // LTODO
         FIRST = false;
         // fsinit()
     }
 
-    // TODO
-    // user_trap_ret();
-    panic!("in fork_ret");
+    // LTODO
+    user_trap_ret();
 }
 
 #[inline]

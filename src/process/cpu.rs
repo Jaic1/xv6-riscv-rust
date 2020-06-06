@@ -131,6 +131,23 @@ impl<'a> Cpu<'a> {
             unsafe {p.lock.release_lock();}
         }
     }
+
+    /// Release the process's lock
+    /// Only used in fork_ret or
+    /// places not having current cpu's reference
+    pub unsafe fn release_proc(&self) {
+        self.proc.as_ref().unwrap().lock.release_lock();
+    }
+
+    /// Prepare for the user trap return
+    /// Return current proc's satp for assembly code to switch page table
+    pub fn user_ret_prepare(&mut self) -> usize {
+        if self.proc.is_none() {
+            panic!("Cpu's user_ret_prepare: holding no process");
+        } else {
+            self.proc.as_mut().unwrap().user_ret_prepare()
+        }
+    }
 }
 
 /// Called in spinlock's push_off().

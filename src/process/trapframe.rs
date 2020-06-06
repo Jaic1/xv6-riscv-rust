@@ -1,10 +1,10 @@
 #[repr(C)]
 pub struct TrapFrame {
-    /*   0 */ kernel_satp: usize,   // kernel page table
-    /*   8 */ kernel_sp: usize,     // top of process's kernel stack
-    /*  16 */ kernel_trap: usize,   // usertrap()
-    /*  24 */ epc: usize,           // saved user program counter
-    /*  32 */ kernel_hartid: usize, // saved kernel tp
+    /*   0 */ pub kernel_satp: usize,   // kernel page table
+    /*   8 */ pub kernel_sp: usize,     // top of process's kernel stack
+    /*  16 */ pub kernel_trap: usize,   // usertrap()
+    /*  24 */ pub epc: usize,           // saved user program counter
+    /*  32 */ pub kernel_hartid: usize, // saved kernel tp
     /*  40 */ ra: usize,
     /*  48 */ sp: usize,
     /*  56 */ gp: usize,

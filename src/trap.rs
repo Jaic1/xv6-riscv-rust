@@ -1,3 +1,7 @@
+//! Trap handler between user/kernel space and kernel space
+//! Mostly adopted from xv6-riscv
+
+use crate::consts::TRAPFRAME;
 use crate::register::{stvec, sstatus, sepc, stval, sip, scause::{self, ScauseType}};
 use crate::process::{cpu_id, my_cpu};
 use crate::spinlock::SpinLock;
@@ -8,6 +12,34 @@ pub unsafe fn trap_init_hart() {
     }
 
     stvec::write(kernelvec as usize);
+}
+
+// TODO
+#[no_mangle]
+pub extern fn user_trap() {
+
+}
+
+/// Return to user space
+pub unsafe fn user_trap_ret() -> ! {
+    // disable interrupts and prepare sret to user mode
+    sstatus::intr_off();
+    sstatus::user_ret_prepare();
+
+    // send interrupts and exceptions to uservec in trampoline.S
+    extern "C" {
+        fn uservec();
+    }
+    stvec::write(uservec as usize);
+
+    // let the current cpu and process prepare for the sret
+    let c = my_cpu();
+    let satp = c.user_ret_prepare();
+
+    extern "C" {
+        fn userret(a0: usize, a1: usize) -> !;
+    }
+    userret(TRAPFRAME.into(), satp);
 }
 
 /// Used to handle kernel space's trap

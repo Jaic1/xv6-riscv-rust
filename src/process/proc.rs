@@ -3,10 +3,12 @@ use core::option::Option;
 use core::convert::TryFrom;
 
 use crate::consts::{TRAMPOLINE, TRAPFRAME, PGSIZE};
+use crate::register::{satp, sepc};
 use crate::spinlock::SpinLock;
 use crate::mm::{Box, PageTable, VirtAddr, PhysAddr, PteFlag};
+use crate::trap::user_trap;
 
-use super::{Context, TrapFrame, fork_ret};
+use super::{Context, TrapFrame, fork_ret, cpu_id};
 
 #[derive(Eq, PartialEq, Debug)]
 pub enum ProcState { UNUSED, SLEEPING, RUNNABLE, RUNNING, ZOMBIE }
@@ -81,8 +83,24 @@ impl Proc {
 
     /// Called by ProcManager's user_init,
     /// only be called once
-    /// TODO - copy used code and sth else
+    /// LTODO - copy used code and sth else
     pub fn user_init(&mut self) {
         self.state = ProcState::RUNNABLE;
+    }
+
+    // Prepare things before sret to user space
+    pub fn user_ret_prepare(&mut self) -> usize {
+        let tf: &mut TrapFrame = unsafe {&mut *self.tf};
+        tf.kernel_satp = satp::read();
+        // current kernel stack's content is cleaned
+        // after returning to the kernel space
+        tf.kernel_sp = self.kstack + PGSIZE;
+        tf.kernel_trap = user_trap as usize;
+        tf.kernel_hartid = unsafe {cpu_id()};
+
+        // restore the user pc previously stored in sepc
+        sepc::write(tf.epc);
+
+        unsafe {self.pagetable.as_ref().unwrap().as_satp()}
     }
 }

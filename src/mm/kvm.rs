@@ -70,7 +70,7 @@ pub unsafe fn kvm_init() {
         PteFlag::R | PteFlag::W,
     );
 
-    // TODO
+    // LTODO
     // map the trampoline for trap entry/exit to
     // the highest virtual address in the kernel.
     // kvmmap(TRAMPOLINE, (uint64)trampoline, PGSIZE, PTE_R | PTE_X);
