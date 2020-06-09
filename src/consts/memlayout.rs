@@ -45,7 +45,12 @@ pub const PHYSTOP: ConstAddr = KERNBASE.const_add(128 * 1024 * 1024);
 
 /// map the trampoline page to the highest address,
 /// in both user and kernel space.
+/// 0x3FFFFFF000
 pub const TRAMPOLINE: ConstAddr = MAXVA.const_sub(PGSIZE);
 
 /// trapframe is below the trampoline
+/// 0x3FFFFFE000
 pub const TRAPFRAME: ConstAddr = TRAMPOLINE.const_sub(PGSIZE);
+
+/// user text/code start address
+pub const USERTEXT: ConstAddr = ConstAddr(0);

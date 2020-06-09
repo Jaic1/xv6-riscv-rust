@@ -2,7 +2,7 @@ use core::convert::{TryFrom, Into};
 
 use crate::consts::{
     CLINT, CLINT_MAP_SIZE, KERNBASE, PHYSTOP, PLIC, PLIC_MAP_SIZE, UART0, UART0_MAP_SIZE, VIRTIO0,
-    VIRTIO0_MAP_SIZE,
+    VIRTIO0_MAP_SIZE, TRAMPOLINE, PGSIZE
 };
 use crate::mm::{Addr, PageTable, PhysAddr, PteFlag, VirtAddr};
 use crate::register::satp;
@@ -70,10 +70,17 @@ pub unsafe fn kvm_init() {
         PteFlag::R | PteFlag::W,
     );
 
-    // LTODO
     // map the trampoline for trap entry/exit to
     // the highest virtual address in the kernel.
-    // kvmmap(TRAMPOLINE, (uint64)trampoline, PGSIZE, PTE_R | PTE_X);
+    extern "C" {
+        fn trampoline();
+    }
+    kvm_map(
+        VirtAddr::from(TRAMPOLINE),
+        PhysAddr::try_from(trampoline as usize).unwrap(),
+        PGSIZE,
+        PteFlag::R | PteFlag::X
+    );
 }
 
 pub unsafe fn kvm_map(va: VirtAddr, pa: PhysAddr, size: usize, perm: PteFlag) {

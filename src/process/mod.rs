@@ -1,4 +1,5 @@
 use core::convert::TryFrom;
+use core::ptr;
 
 use crate::consts::{NPROC, PGSIZE, TRAMPOLINE};
 use crate::mm::{kalloc, kvm_map, PhysAddr, PteFlag, VirtAddr};
@@ -78,7 +79,9 @@ impl ProcManager {
             unsafe {p.lock.acquire_lock();}
             match p.state {
                 ProcState::UNUSED => {
-                    //p.pid = self.alloc_pid();
+                    let pid = self.alloc_pid();
+                    let p = &mut self.table[i];
+                    p.pid = pid;
                     match unsafe { kalloc() } {
                         Some(ptr) => {
                             p.set_tf(ptr as *mut TrapFrame);
@@ -126,6 +129,11 @@ impl ProcManager {
         let p = self.alloc_proc().expect("user_init: all process should be unused");
         p.user_init();
         p.lock.release_lock();
+    }
+
+    /// Check if the given process is the init_proc 
+    fn is_init_proc(&self, p: &Proc) -> bool {
+        ptr::eq(&self.table[0], p)
     }
 }
 

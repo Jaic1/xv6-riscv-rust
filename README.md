@@ -105,6 +105,9 @@ seems like From and TryFrom can not be both implemented for <T, U>
 so I choose to add a new type for trusted address, i.e.,
 `impl From<ConstAddr> for VirtAddr` & `impl TryFrom<usize> for VirtAddr`(same for `PhysAddr`)
 
+### sepc
+Saving `sepc`(user program counter) in trampoline.S instead of in user_trap.
+
 ## Path
 - [x] porting console and uart to support printf, p.s., smp = 1
 - [x] add register abstraction to support start using mret to return to rust_main
@@ -118,10 +121,10 @@ so I choose to add a new type for trusted address, i.e.,
 - [x] cpu and proc basic abstraction(hard time playing around lock and borrow checker)
 - [x] add kernel trap handler(panic at `fork_ret`)
 - [x] add user trap returner and way to user space
-- [ ] add user code
+- [x] add user code space(initcode) and ecall handing in `user_trap`
 - [ ] start to add fs?
 
-## LTODO
+## TODO
 - [ ] `mul a0, a0, a1` is not an error
 
 ## Useful Reference
@@ -132,3 +135,11 @@ so I choose to add a new type for trusted address, i.e.,
 [Unique issue](https://www.reddit.com/r/rust/comments/bcb0dh/replacement_for_stdptrunique_and_stdptrshared/)  
 [out of memory](https://www.reddit.com/r/rust/comments/279k7i/whats_rusts_mechanism_for_recovering_from_say/)  
 [integrate Mutex and MutexGuard](https://users.rust-lang.org/t/integrate-mutex-and-mutexguard-into-a-struct/43735)  
+
+## Story
+1. timerinit
+2. copy `sie`'s code to `sip`, then clearing `SSIP` becomes clearing `SSIE`,  
+which do not allow supervisor software interrupt forever.
+3. setting `stvec` the wrong address, supposed to be in virtual space,  
+but written as `uservec` directly, which is in physical space.
+4. be careful about `pc` when switching page table

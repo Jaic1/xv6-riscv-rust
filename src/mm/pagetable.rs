@@ -1,8 +1,10 @@
 use core::convert::TryFrom;
+use core::ptr;
 
-use crate::consts::{PGSHIFT, SATP_SV39, SV39FLAGLEN};
+use crate::consts::{PGSIZE, PGSHIFT, SATP_SV39, SV39FLAGLEN, USERTEXT};
 
 use super::Box;
+use super::kalloc;
 use super::PageAligned;
 use super::{Addr, PhysAddr, VirtAddr};
 
@@ -79,8 +81,8 @@ impl PageTable {
 
     /// Convert the page table to be the usize
     /// that can be written in satp register
-    pub unsafe fn as_satp(&self) -> usize {
-        SATP_SV39 | ((&self.data as *const _ as usize) >> PGSHIFT)
+    pub fn as_satp(&self) -> usize {
+        SATP_SV39 | ((self.data.as_ptr() as usize) >> PGSHIFT)
     }
 
     /// Create PTEs for virtual addresses starting at va that refer to
@@ -167,8 +169,25 @@ impl PageTable {
         }
     }
 
-    /// LTODO - uvm_init
-    pub fn uvm_init(&mut self) {
-        
+    /// Load the initcode and map it into the pagetable
+    /// Only used for the very first process
+    pub fn uvm_init(&mut self, code: &[u8]) {
+        if code.len() >= PGSIZE {
+            panic!("pagetable's uvm_init: initcode more than a page");
+        }
+        match unsafe{kalloc()} {
+            Some(mem) => {
+                unsafe {ptr::write_bytes(mem, 0, PGSIZE);}
+                self.map_pages(VirtAddr::from(USERTEXT), PGSIZE,
+                    PhysAddr::try_from(mem as usize).unwrap(),
+                    PteFlag::R | PteFlag::W | PteFlag::X | PteFlag::U)
+                    .expect("pagetable's uvm_init map_pages: ");
+                unsafe {ptr::copy_nonoverlapping(code.as_ptr(),
+                    mem, code.len());}
+            }
+            None => {
+                panic!("pagetable's uvm_init: not enough memory");
+            }
+        }
     }
 }

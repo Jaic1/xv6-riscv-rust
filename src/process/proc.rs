@@ -8,6 +8,7 @@ use crate::spinlock::SpinLock;
 use crate::mm::{Box, PageTable, VirtAddr, PhysAddr, PteFlag};
 use crate::trap::user_trap;
 
+use super::PROC_MANAGER;
 use super::{Context, TrapFrame, fork_ret, cpu_id};
 
 #[derive(Eq, PartialEq, Debug)]
@@ -18,14 +19,17 @@ pub struct Proc {
 
     // p->lock must be held when using these:
     pub state: ProcState,
+    pub killed: bool,
     pub pid: usize,
 
     // lock need not be held, or
     // lock already be held
     kstack: usize,
+    sz: usize,
     pagetable: Option<Box<PageTable>>,
     tf: *mut TrapFrame,
     context: Context,
+    name: [u8; 16],
 }
 
 impl Proc {
@@ -33,11 +37,14 @@ impl Proc {
         Self {
             lock: SpinLock::new((), "proc"),
             state: ProcState::UNUSED,
+            killed: false,
             pid: 0,
             kstack: 0,
+            sz: 0,
             pagetable: None,
             tf: ptr::null_mut(),
             context: Context::new(),
+            name: [0; 16],
         }
     }
 
@@ -82,9 +89,25 @@ impl Proc {
     }
 
     /// Called by ProcManager's user_init,
-    /// only be called once
-    /// LTODO - copy used code and sth else
+    /// Only be called once for the first user process
+    /// TODO - copy user code and sth else
     pub fn user_init(&mut self) {
+        // map initcode in user pagetable
+        self.pagetable.as_mut().unwrap().uvm_init(&INITCODE);
+        self.sz = PGSIZE;
+
+        // prepare return pc and stack pointer
+        let tf: &mut TrapFrame = unsafe {&mut *self.tf};
+        tf.epc = 0;
+        tf.set_sp(PGSIZE);
+
+        let init_name = b"initcode\0";
+        unsafe {
+            ptr::copy_nonoverlapping(init_name.as_ptr(),
+                self.name.as_mut_ptr(), init_name.len());
+        }
+        // TODO - p->cwd = namei("/");
+
         self.state = ProcState::RUNNABLE;
     }
 
@@ -101,6 +124,29 @@ impl Proc {
         // restore the user pc previously stored in sepc
         sepc::write(tf.epc);
 
-        unsafe {self.pagetable.as_ref().unwrap().as_satp()}
+        self.pagetable.as_ref().unwrap().as_satp()
+    }
+
+    /// Exit the current process. No return.
+    /// LTODO - An exited process remains in the zombie state
+    ///     until its parent calls wait()
+    pub fn exit(&mut self, status: isize) {
+        if unsafe {PROC_MANAGER.is_init_proc(&self)} {
+            panic!("init_proc exiting");
+        }
+
+        panic!("exit: TODO, status={}", status);
     }
 }
+
+/// from xv6-riscv:
+/// first user program that calls exec("/init")
+static INITCODE: [u8; 51] = [
+    0x17, 0x05, 0x00, 0x00, 0x13, 0x05, 0x05, 0x02,
+    0x97, 0x05, 0x00, 0x00, 0x93, 0x85, 0x05, 0x02,
+    0x9d, 0x48, 0x73, 0x00, 0x00, 0x00, 0x89, 0x48,
+    0x73, 0x00, 0x00, 0x00, 0xef, 0xf0, 0xbf, 0xff,
+    0x2f, 0x69, 0x6e, 0x69, 0x74, 0x00, 0x00, 0x01,
+    0x20, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00
+];

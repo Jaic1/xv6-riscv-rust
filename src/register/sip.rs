@@ -5,13 +5,13 @@ const SSIP: usize = 1 << 1;
 #[inline]
 unsafe fn read() -> usize {
     let ret: usize;
-    llvm_asm!("csrr $0, sie":"=r"(ret):::"volatile");
+    llvm_asm!("csrr $0, sip":"=r"(ret):::"volatile");
     ret
 }
 
 #[inline]
 unsafe fn write(x: usize) {
-    llvm_asm!("csrw sie, $0"::"r"(x)::"volatile");
+    llvm_asm!("csrw sip, $0"::"r"(x)::"volatile");
 }
 
 pub fn clear_ssip() {

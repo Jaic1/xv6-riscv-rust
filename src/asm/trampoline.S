@@ -7,6 +7,11 @@
 #
 # note: code size here should not be larger than a page,
 #       and kernel.ld will align the page for trampsec section
+#
+# diff: swap the region of userret and uservec,
+#       because rust can not call userret directly then.
+#       otherwise rust code need to add some address to the function pointer,
+#       which is not allowed.
 
 .section trampsec
 .globl trampoline
@@ -14,8 +19,7 @@ trampoline:
 
 .globl uservec
 uservec:
-    # TODO - update some comments
-    # trap.c sets stvec to point here, so
+    # user_trap_ret() sets stvec to point here, so
     # traps from user space start here,
     # in supervisor mode, but with a
     # user page table.
@@ -64,13 +68,17 @@ uservec:
     csrr t0, sscratch
     sd t0, 112(a0)
 
+    # save the user program counter
+    csrr t0, sepc
+    sd t0, 24(a0)
+
     # restore kernel stack pointer from p->tf->kernel_sp
     ld sp, 8(a0)
 
     # make tp hold the current hartid, from p->tf->kernel_hartid
     ld tp, 32(a0)
 
-    # load the address of usertrap(), p->tf->kernel_trap
+    # load the address of user_trap(), p->tf->kernel_trap
     ld t0, 16(a0)
 
     # restore kernel page table from p->tf->kernel_satp
@@ -81,9 +89,10 @@ uservec:
     # a0 is no longer valid, since the kernel page
     # table does not specially map p->tf.
 
-    # jump to usertrap(), which does not return
+    # jump to user_trap(), which does not return
     jr t0
 
+.align 4
 .globl userret
 userret:
     # userret(TRAPFRAME, pagetable)

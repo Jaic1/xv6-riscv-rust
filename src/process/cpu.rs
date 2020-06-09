@@ -148,6 +148,21 @@ impl<'a> Cpu<'a> {
             self.proc.as_mut().unwrap().user_ret_prepare()
         }
     }
+
+    /// Try to abondon current process if its killed flag is set
+    /// No need to clear self.proc reference, scheduler thread will do it
+    pub fn try_abondon(&mut self, status: isize) {
+        if self.proc.as_ref().unwrap().killed {
+            self.proc.as_mut().unwrap().exit(status);
+        }
+    }
+
+    /// Abondon current process by setting its killed flag to true
+    pub fn abondon(&mut self, status: isize) {
+        let p = self.proc.as_mut().unwrap();
+        p.killed = true;
+        p.exit(status);
+    }
 }
 
 /// Called in spinlock's push_off().
@@ -182,7 +197,6 @@ pub fn pop_off() {
 /// enable device interrupts
 #[inline]
 fn intr_on() {
-    
     sie::intr_on();
     sstatus::intr_on();
 }

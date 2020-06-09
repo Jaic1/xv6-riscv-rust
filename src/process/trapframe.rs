@@ -37,3 +37,10 @@ pub struct TrapFrame {
     /* 272 */ t5: usize,
     /* 280 */ t6: usize,
 }
+
+impl TrapFrame {
+    #[inline]
+    pub fn set_sp(&mut self, sp: usize) {
+        self.sp = sp;
+    }
+}

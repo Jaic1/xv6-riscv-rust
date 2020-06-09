@@ -42,6 +42,12 @@ pub fn is_from_supervisor() -> bool {
     (read() & SPP) != 0
 }
 
+/// check is the previous mode from user
+#[inline]
+pub fn is_from_user() -> bool {
+    (read() & SPP) == 0
+}
+
 /// Prepare to return to user space from kernel/supervisor space
 /// Clear SPP to 0 for user mode
 /// Enable interrupts in user mode after sret
