@@ -38,8 +38,18 @@ impl PageTableEntry {
     }
 
     #[inline]
+    fn is_user(&self) -> bool {
+        (self.data & (PteFlag::U.bits())) > 0
+    }
+
+    #[inline]
     fn as_page_table(&self) -> *mut PageTable {
         ((self.data >> SV39FLAGLEN) << PGSHIFT) as *mut PageTable
+    }
+
+    #[inline]
+    fn as_phys_addr(&self) -> PhysAddr {
+        PhysAddr::try_from((self.data >> SV39FLAGLEN) << PGSHIFT).unwrap()
     }
 
     #[inline]
@@ -101,7 +111,7 @@ impl PageTable {
         last.pg_round_up();
 
         while va != last {
-            match self.walk(va, true) {
+            match self.walk_alloc(va) {
                 Some(pte) => {
                     if pte.is_valid() {
                         println!(
@@ -131,7 +141,7 @@ impl PageTable {
     ///
     /// if alloc is true then allocate new page table necessarily
     /// but doesn't change anything.(lazy allocation)
-    fn walk(&mut self, va: VirtAddr, alloc: bool) -> Option<&mut PageTableEntry> {
+    fn walk_alloc(&mut self, va: VirtAddr) -> Option<&mut PageTableEntry> {
         let mut page_table = self as *mut PageTable;
         for level in (1..=2).rev() {
             let pte = unsafe { &mut (*page_table).data[va.page_num(level)] };
@@ -139,9 +149,6 @@ impl PageTable {
             if pte.is_valid() {
                 page_table = pte.as_page_table();
             } else {
-                if !alloc {
-                    return None;
-                }
                 match Box::<PageTable>::new() {
                     Some(mut new_page_table) => {
                         new_page_table.clear();
@@ -153,6 +160,20 @@ impl PageTable {
             }
         }
         unsafe { Some(&mut (*page_table).data[va.page_num(0)]) }
+    }
+
+    fn walk(&self, va: VirtAddr) -> Option<&PageTableEntry> {
+        let mut page_table = self as *const PageTable;
+        for level in (1..=2).rev() {
+            let pte = unsafe { &(*page_table).data[va.page_num(level)] };
+
+            if pte.is_valid() {
+                page_table = pte.as_page_table();
+            } else {
+                return None
+            }
+        }
+        unsafe { Some(&(*page_table).data[va.page_num(0)]) }
     }
 
     /// Create a page table for a given process,
@@ -189,5 +210,71 @@ impl PageTable {
                 panic!("pagetable's uvm_init: not enough memory");
             }
         }
+    }
+
+    /// Return the mapped physical address(page aligned)
+    /// va need not be page aligned
+    fn walk_addr(&self, va: VirtAddr)
+        -> Result<PhysAddr, &'static str>
+    {
+        match self.walk(va) {
+            Some(pte) => {
+                if !pte.is_valid() {
+                    Err("pte not valid")
+                } else if !pte.is_user() {
+                    Err("pte not mapped for user")
+                } else {
+                    Ok(pte.as_phys_addr())
+                }
+            }
+            None => {
+                Err("va not mapped")
+            }
+        }
+    }
+
+    /// Copy null-terminated string from virtual address starting at srcva,
+    /// to a kernel u8 slice.
+    pub fn copy_in_str(&self, srcva: usize, dst: &mut [u8])
+        -> Result<(), &'static str>
+    {
+        let mut i: usize = 0;
+        let mut va = VirtAddr::try_from(srcva).unwrap();
+
+        // iterate through the raw content page by page
+        while i < dst.len() {
+            let mut base = va;
+            base.pg_round_down();
+            let distance = (va - base).as_usize();
+            let mut pa_ptr = unsafe {
+                self.walk_addr(base)?
+                    .as_ptr()
+                    .offset(distance as isize)
+            };
+            let mut va_ptr = va.as_ptr();
+            base.add_page();
+            let va_end = base.as_ptr();
+            va = base;
+
+            // iterate througn each u8 in a page
+            let enough_space = (dst.len() - i) >= (PGSIZE - distance);
+            while !ptr::eq(va_ptr, va_end) {
+                if !enough_space && i >= dst.len() {
+                    return Err("copy_in_str: dst not enough space")
+                }
+
+                unsafe {
+                    dst[i] = *pa_ptr;
+                    if dst[i] == 0 {
+                        return Ok(())
+                    }
+                    i += 1;
+                    pa_ptr = pa_ptr.add(1);
+                    va_ptr = va_ptr.add(1);
+                }
+            }
+        }
+
+        Err("copy_in_str: dst not enough space")
     }
 }

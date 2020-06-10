@@ -8,8 +8,9 @@ use crate::spinlock::SpinLock;
 use crate::mm::{Box, PageTable, VirtAddr, PhysAddr, PteFlag};
 use crate::trap::user_trap;
 
-use super::PROC_MANAGER;
+use super::{PROC_MANAGER, cpu};
 use super::{Context, TrapFrame, fork_ret, cpu_id};
+use super::syscall::Syscall;
 
 #[derive(Eq, PartialEq, Debug)]
 pub enum ProcState { UNUSED, SLEEPING, RUNNABLE, RUNNING, ZOMBIE }
@@ -24,10 +25,11 @@ pub struct Proc {
 
     // lock need not be held, or
     // lock already be held
+    // LTODO - public or private
     kstack: usize,
     sz: usize,
-    pagetable: Option<Box<PageTable>>,
-    tf: *mut TrapFrame,
+    pub pagetable: Option<Box<PageTable>>,
+    pub tf: *mut TrapFrame,
     context: Context,
     name: [u8; 16],
 }
@@ -136,6 +138,29 @@ impl Proc {
         }
 
         panic!("exit: TODO, status={}", status);
+    }
+
+    /// Handle system call as a process
+    /// It may be interrrupted in the procedure of syscall
+    /// Cpu's syscall jumps here
+    pub fn syscall(&mut self) {
+        let a7 = {
+            let tf = unsafe {&mut *self.tf};
+            tf.admit_ecall();
+            tf.get_a7()
+        };
+        cpu::intr_on();
+
+        let return_a0 = match a7 {
+            7 => {
+                self.sys_exec()
+            }
+            _ => {
+                panic!("unknown syscall");
+            }
+        };
+        let tf = unsafe {&mut *self.tf};
+        tf.set_a0(return_a0);
     }
 }
 

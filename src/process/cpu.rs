@@ -163,6 +163,14 @@ impl<'a> Cpu<'a> {
         p.killed = true;
         p.exit(status);
     }
+
+    /// Handle syscall from user code, typically by ecall
+    /// handle_trap jumps here
+    pub fn syscall(&mut self) {
+        self.try_abondon(-1);
+        self.proc.as_mut().unwrap().syscall();
+        self.try_abondon(-1);
+    }
 }
 
 /// Called in spinlock's push_off().
@@ -196,7 +204,7 @@ pub fn pop_off() {
 
 /// enable device interrupts
 #[inline]
-fn intr_on() {
+pub fn intr_on() {
     sie::intr_on();
     sstatus::intr_on();
 }

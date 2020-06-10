@@ -27,6 +27,7 @@ mod spinlock;
 mod start;
 mod string;
 mod trap;
+mod driver;
 
 #[cfg(feature = "unit_test")]
 fn test_main_entry() {

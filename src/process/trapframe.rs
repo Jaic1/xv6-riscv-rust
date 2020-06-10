@@ -40,7 +40,52 @@ pub struct TrapFrame {
 
 impl TrapFrame {
     #[inline]
+    pub fn admit_ecall(&mut self) {
+        self.epc += 4;
+    }
+
+    #[inline]
     pub fn set_sp(&mut self, sp: usize) {
         self.sp = sp;
+    }
+
+    #[inline]
+    pub fn set_a0(&mut self, a0: usize){
+        self.a0 = a0;
+    }
+
+    #[inline]
+    pub fn get_a0(&self) -> usize {
+        self.a0
+    }
+
+    #[inline]
+    pub fn get_a1(&self) -> usize {
+        self.a1
+    }
+
+    #[inline]
+    pub fn get_a2(&self) -> usize {
+        self.a2
+    }
+
+    #[inline]
+    pub fn get_a3(&self) -> usize {
+        self.a3
+    }
+
+    #[inline]
+    pub fn get_a4(&self) -> usize {
+        self.a4
+    }
+
+    #[inline]
+    pub fn get_a5(&self) -> usize {
+        self.a5
+    }
+
+    #[inline]
+    pub fn get_a7(&self) -> usize {
+        self.a7
     }
 }

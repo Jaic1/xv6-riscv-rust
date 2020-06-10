@@ -12,6 +12,8 @@ mod context;
 mod proc;
 mod cpu;
 mod trapframe;
+mod syscall;
+mod elf;
 
 use context::Context;
 use proc::{Proc, ProcState};

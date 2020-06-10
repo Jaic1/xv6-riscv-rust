@@ -16,18 +16,18 @@ pub unsafe fn trap_init_hart() {
 
 /// uservec in trampoline.S jumps here 
 #[no_mangle]
-pub extern fn user_trap() {
+pub unsafe extern fn user_trap() {
     if !sstatus::is_from_user() {
         panic!("user_trap: not from user mode, sstatus={:#x}", sstatus::read());
     }
 
     // switch the trap handler to kerneltrap()
     extern "C" {fn kernelvec();}
-    unsafe {stvec::write(kernelvec as usize);}
+    stvec::write(kernelvec as usize);
 
     handle_trap(true);
 
-    unsafe {user_trap_ret();}
+    user_trap_ret();
 }
 
 /// Return to user space
@@ -113,8 +113,8 @@ fn handle_trap(is_user: bool) {
                 panic!("handler_trap: ecall from supervisor mode");
             }
 
-            // TODO
-            panic!("hanlder_trap: start to hanle syscall");
+            let c = unsafe {my_cpu()};
+            c.syscall();
         }
         ScauseType::Unknown => {
             println!("scause {:#x}", scause::read());

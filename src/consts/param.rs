@@ -15,3 +15,7 @@ pub const PGSIZE: usize = 4096;
 pub const PGSHIFT: usize = 12;
 pub const PGMASK: usize = 0x1FF;
 pub const PGMASKLEN: usize = 9;
+
+/// for syscall
+pub const MAXPATH: usize = 128;
+pub const MAXARG: usize = 32;

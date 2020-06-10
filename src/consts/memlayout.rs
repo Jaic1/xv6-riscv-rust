@@ -32,6 +32,7 @@ pub const UART0_MAP_SIZE: usize = PGSIZE;
 /// virtio mmio interface
 pub const VIRTIO0: ConstAddr = ConstAddr(0x10001000);
 pub const VIRTIO0_MAP_SIZE: usize = PGSIZE;
+pub const VIRTIO0_IRQ: usize = 1;
 
 /// qemu puts programmable interrupt controller here.
 pub const PLIC: ConstAddr = ConstAddr(0x0c000000);

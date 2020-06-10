@@ -1,5 +1,6 @@
 use core::convert::TryFrom;
 use core::result::Result;
+use core::ops::{Add, Sub};
 
 use crate::consts::{PGMASK, PGMASKLEN, PGSHIFT, PGSIZE, PHYSTOP, MAXVA, ConstAddr};
 
@@ -26,6 +27,11 @@ pub trait Addr {
     #[inline]
     fn as_usize(&self) -> usize {
         *self.data_ref()
+    }
+
+    #[inline]
+    fn as_ptr(&self) -> *const u8 {
+        *self.data_ref() as *const u8
     }
 }
 
@@ -113,5 +119,21 @@ impl TryFrom<usize> for VirtAddr {
 impl From<ConstAddr> for VirtAddr {
     fn from(const_addr: ConstAddr) -> Self {
         Self(const_addr.into())
+    }
+}
+
+impl Add for VirtAddr {
+    type Output = Self;
+
+    fn add(self, other: Self) -> Self {
+        Self(self.0 + other.0)
+    }
+}
+
+impl Sub for VirtAddr {
+    type Output = Self;
+
+    fn sub(self, other: Self) -> Self {
+        Self(self.0 - other.0)
     }
 }
