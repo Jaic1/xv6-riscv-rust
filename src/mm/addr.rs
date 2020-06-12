@@ -80,7 +80,7 @@ impl From<ConstAddr> for PhysAddr {
 /// Sv39, to avoid having to sign-extend virtual addresses
 /// that have the high bit set.
 #[repr(C)]
-#[derive(Copy, Clone, Eq, PartialEq)]
+#[derive(Copy, Clone, Eq, PartialEq, Debug)]
 pub struct VirtAddr(usize);
 
 impl Addr for VirtAddr {

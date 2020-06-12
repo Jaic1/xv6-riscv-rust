@@ -1,10 +1,12 @@
 //! Trap handler between user/kernel space and kernel space
 //! Mostly adopted from xv6-riscv
 
-use crate::consts::{TRAMPOLINE, TRAPFRAME};
+use crate::consts::{TRAMPOLINE, TRAPFRAME, UART0_IRQ, VIRTIO0_IRQ};
 use crate::register::{stvec, sstatus, sepc, stval, sip, scause::{self, ScauseType}};
 use crate::process::{cpu_id, my_cpu};
 use crate::spinlock::SpinLock;
+use crate::plic;
+use crate::driver::virtio;
 
 pub unsafe fn trap_init_hart() {
     extern "C" {
@@ -82,11 +84,16 @@ pub fn kerneltrap() {
 fn handle_trap(is_user: bool) {
     match scause::get_scause() {
         ScauseType::IntSExt => {
-            if is_user {
-                // TODO
-            } else {
-                panic!("handle_trap: expect no software external interrupt");
+            // this is a supervisor external interrupt, via PLIC.
+
+            let irq = plic::claim();
+            if irq as usize == UART0_IRQ {
+                // uart intr
+            } else if irq as usize == VIRTIO0_IRQ {
+                virtio::disk_intr();
             }
+
+            plic::complete(irq);
         }
         ScauseType::IntSSoft => {
             // software interrupt from a machine-mode timer interrupt,

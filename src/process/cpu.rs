@@ -19,6 +19,11 @@ pub unsafe fn my_cpu() -> &'static mut Cpu<'static> {
     &mut CPUS[id]
 }
 
+pub unsafe fn my_proc() -> &'static mut Proc {
+    let c = my_cpu();
+    c.proc.as_mut().unwrap()
+}
+
 /// Cpu contains current info about this hart
 ///
 /// no need to bind a spinlock to it,
@@ -76,7 +81,7 @@ impl<'a> Cpu<'a> {
 
     /// Switch back to scheduler.
     /// see more in xv6-riscv
-    unsafe fn sched(&mut self) {
+    pub unsafe fn sched(&mut self) {
         extern "C" {
             fn swtch(old: *mut Context, new: *mut Context);
         }

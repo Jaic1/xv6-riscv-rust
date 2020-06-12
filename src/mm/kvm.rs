@@ -95,3 +95,22 @@ pub unsafe fn kvm_map(va: VirtAddr, pa: PhysAddr, size: usize, perm: PteFlag) {
         panic!("kvm_map: {}", err);
     }
 }
+
+/// translate a kernel virtual address to
+/// a physical address. only needed for
+/// addresses on the stack.
+/// va need not be page aligned.
+pub unsafe fn kvm_pa(va: VirtAddr) -> u64 {
+    let off: u64 = (va.as_usize() % PGSIZE) as u64;
+    match KERNEL_PAGE_TABLE.walk(va) {
+        Some(pte) => {
+            if !pte.is_valid() {
+                panic!("kvm_pa: va={:?} mapped pa not valid");
+            }
+            pte.as_phys_addr().as_usize() as u64 + off
+        }
+        None => {
+            panic!("kvm_pa: va={:?} no mapped pa", va);
+        }
+    }
+}

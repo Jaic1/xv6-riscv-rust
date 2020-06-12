@@ -27,13 +27,13 @@ bitflags! {
 /// because the lower 10-bits are used for flags.
 /// So we need to do extra non-trivial conversion between its data and Box<PageTable>.
 #[repr(C)]
-struct PageTableEntry {
+pub struct PageTableEntry {
     data: usize,
 }
 
 impl PageTableEntry {
     #[inline]
-    fn is_valid(&self) -> bool {
+    pub fn is_valid(&self) -> bool {
         (self.data & (PteFlag::V.bits())) > 0
     }
 
@@ -48,7 +48,7 @@ impl PageTableEntry {
     }
 
     #[inline]
-    fn as_phys_addr(&self) -> PhysAddr {
+    pub fn as_phys_addr(&self) -> PhysAddr {
         PhysAddr::try_from((self.data >> SV39FLAGLEN) << PGSHIFT).unwrap()
     }
 
@@ -162,7 +162,7 @@ impl PageTable {
         unsafe { Some(&mut (*page_table).data[va.page_num(0)]) }
     }
 
-    fn walk(&self, va: VirtAddr) -> Option<&PageTableEntry> {
+    pub fn walk(&self, va: VirtAddr) -> Option<&PageTableEntry> {
         let mut page_table = self as *const PageTable;
         for level in (1..=2).rev() {
             let pte = unsafe { &(*page_table).data[va.page_num(level)] };

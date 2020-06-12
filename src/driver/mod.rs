@@ -1,1 +1,1 @@
-mod virtio;
+pub mod virtio;

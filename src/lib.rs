@@ -19,6 +19,7 @@ mod printf;
 
 mod console;
 mod consts;
+mod fs;
 mod mm;
 mod process;
 mod register;
@@ -28,6 +29,7 @@ mod start;
 mod string;
 mod trap;
 mod driver;
+mod plic;
 
 #[cfg(feature = "unit_test")]
 fn test_main_entry() {

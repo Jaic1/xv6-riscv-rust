@@ -5,8 +5,9 @@ use crate::consts::{NPROC, PGSIZE, TRAMPOLINE};
 use crate::mm::{kalloc, kvm_map, PhysAddr, PteFlag, VirtAddr};
 use crate::spinlock::SpinLock;
 use crate::trap::user_trap_ret;
+use crate::fs::{self, ROOTDEV};
 
-pub use cpu::{cpu_id, push_off, pop_off, my_cpu};
+pub use cpu::{cpu_id, push_off, pop_off, my_cpu, my_proc};
 
 mod context;
 mod proc;
@@ -137,6 +138,18 @@ impl ProcManager {
     fn is_init_proc(&self, p: &Proc) -> bool {
         ptr::eq(&self.table[0], p)
     }
+
+    /// Wake up all processes sleeping on chan.
+    /// Must be called without any p->lock.
+    pub fn wakeup(&mut self, chan: usize) {
+        for p in self.table.iter_mut() {
+            let _lock = p.lock.lock();
+            if p.state == ProcState::SLEEPING && p.chan == chan {
+                p.state = ProcState::RUNNABLE;
+            }
+            drop(_lock);
+        }
+    }
 }
 
 /// A fork child's very first scheduling by scheduler()
@@ -151,12 +164,10 @@ unsafe fn fork_ret() -> ! {
     
     if FIRST {
         // File system initialization
-        // LTODO
         FIRST = false;
-        // fsinit()
+        fs::init(ROOTDEV);
     }
 
-    // LTODO
     user_trap_ret();
 }
 

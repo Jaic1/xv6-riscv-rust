@@ -1,25 +1,32 @@
-use core::ptr;
-use core::option::Option;
 use core::convert::TryFrom;
+use core::option::Option;
+use core::ptr;
 
-use crate::consts::{TRAMPOLINE, TRAPFRAME, PGSIZE};
+use crate::consts::{PGSIZE, TRAMPOLINE, TRAPFRAME};
+use crate::mm::{Box, PageTable, PhysAddr, PteFlag, VirtAddr};
 use crate::register::{satp, sepc};
-use crate::spinlock::SpinLock;
-use crate::mm::{Box, PageTable, VirtAddr, PhysAddr, PteFlag};
+use crate::spinlock::{SpinLock, SpinLockGuard};
 use crate::trap::user_trap;
 
-use super::{PROC_MANAGER, cpu};
-use super::{Context, TrapFrame, fork_ret, cpu_id};
 use super::syscall::Syscall;
+use super::{cpu, PROC_MANAGER, my_cpu};
+use super::{cpu_id, fork_ret, Context, TrapFrame};
 
 #[derive(Eq, PartialEq, Debug)]
-pub enum ProcState { UNUSED, SLEEPING, RUNNABLE, RUNNING, ZOMBIE }
+pub enum ProcState {
+    UNUSED,
+    SLEEPING,
+    RUNNABLE,
+    RUNNING,
+    ZOMBIE,
+}
 
 pub struct Proc {
     pub lock: SpinLock<()>,
 
     // p->lock must be held when using these:
     pub state: ProcState,
+    pub chan: usize,
     pub killed: bool,
     pub pid: usize,
 
@@ -39,6 +46,7 @@ impl Proc {
         Self {
             lock: SpinLock::new((), "proc"),
             state: ProcState::UNUSED,
+            chan: 0,
             killed: false,
             pid: 0,
             kstack: 0,
@@ -62,11 +70,21 @@ impl Proc {
         }
 
         let mut pagetable = PageTable::uvm_create();
-        pagetable.map_pages(VirtAddr::from(TRAMPOLINE), PGSIZE,
-            PhysAddr::try_from(trampoline as usize).unwrap(), PteFlag::R | PteFlag::X)
+        pagetable
+            .map_pages(
+                VirtAddr::from(TRAMPOLINE),
+                PGSIZE,
+                PhysAddr::try_from(trampoline as usize).unwrap(),
+                PteFlag::R | PteFlag::X,
+            )
             .expect("user proc table mapping trampoline");
-        pagetable.map_pages(VirtAddr::from(TRAPFRAME), PGSIZE,
-            PhysAddr::try_from(self.tf as usize).unwrap(), PteFlag::R | PteFlag::W)
+        pagetable
+            .map_pages(
+                VirtAddr::from(TRAPFRAME),
+                PGSIZE,
+                PhysAddr::try_from(self.tf as usize).unwrap(),
+                PteFlag::R | PteFlag::W,
+            )
             .expect("user proc table mapping trapframe");
 
         self.pagetable = Some(pagetable);
@@ -99,14 +117,13 @@ impl Proc {
         self.sz = PGSIZE;
 
         // prepare return pc and stack pointer
-        let tf: &mut TrapFrame = unsafe {&mut *self.tf};
+        let tf: &mut TrapFrame = unsafe { &mut *self.tf };
         tf.epc = 0;
         tf.set_sp(PGSIZE);
 
         let init_name = b"initcode\0";
         unsafe {
-            ptr::copy_nonoverlapping(init_name.as_ptr(),
-                self.name.as_mut_ptr(), init_name.len());
+            ptr::copy_nonoverlapping(init_name.as_ptr(), self.name.as_mut_ptr(), init_name.len());
         }
         // TODO - p->cwd = namei("/");
 
@@ -115,13 +132,13 @@ impl Proc {
 
     // Prepare things before sret to user space
     pub fn user_ret_prepare(&mut self) -> usize {
-        let tf: &mut TrapFrame = unsafe {&mut *self.tf};
+        let tf: &mut TrapFrame = unsafe { &mut *self.tf };
         tf.kernel_satp = satp::read();
         // current kernel stack's content is cleaned
         // after returning to the kernel space
         tf.kernel_sp = self.kstack + PGSIZE;
         tf.kernel_trap = user_trap as usize;
-        tf.kernel_hartid = unsafe {cpu_id()};
+        tf.kernel_hartid = unsafe { cpu_id() };
 
         // restore the user pc previously stored in sepc
         sepc::write(tf.epc);
@@ -133,7 +150,7 @@ impl Proc {
     /// LTODO - An exited process remains in the zombie state
     ///     until its parent calls wait()
     pub fn exit(&mut self, status: isize) {
-        if unsafe {PROC_MANAGER.is_init_proc(&self)} {
+        if unsafe { PROC_MANAGER.is_init_proc(&self) } {
             panic!("init_proc exiting");
         }
 
@@ -145,33 +162,69 @@ impl Proc {
     /// Cpu's syscall jumps here
     pub fn syscall(&mut self) {
         let a7 = {
-            let tf = unsafe {&mut *self.tf};
+            let tf = unsafe { &mut *self.tf };
             tf.admit_ecall();
             tf.get_a7()
         };
         cpu::intr_on();
 
         let return_a0 = match a7 {
-            7 => {
-                self.sys_exec()
-            }
+            7 => self.sys_exec(),
             _ => {
                 panic!("unknown syscall");
             }
         };
-        let tf = unsafe {&mut *self.tf};
+        let tf = unsafe { &mut *self.tf };
         tf.set_a0(return_a0);
+    }
+
+    /// Atomically release lock and sleep on chan.
+    /// Reacquires lock when awakened.
+    pub fn sleep<'a, T>(
+        &mut self,
+        chan: usize,
+        lk: &'a SpinLock<T>,
+        guard: SpinLockGuard<'a, T>,
+    ) -> SpinLockGuard<'a, T> {
+        let same_lock: bool = ptr::eq(
+            lk as *const _ as *const T,
+            &self.lock as *const _ as *const T,
+        );
+
+        if !same_lock {
+            unsafe {self.lock.acquire_lock();}
+            drop(guard);
+
+            self.chan = chan;
+            self.state = ProcState::SLEEPING;
+            unsafe {
+                let c = my_cpu();
+                c.sched();
+            }
+            self.chan = 0;
+
+            // reacquire the original lock
+            unsafe {self.lock.release_lock();}
+            lk.lock()
+        }
+        else {
+            self.chan = chan;
+            self.state = ProcState::SLEEPING;
+            unsafe {
+                let c = my_cpu();
+                c.sched();
+            }
+            self.chan = 0;
+            guard
+        }
     }
 }
 
 /// from xv6-riscv:
 /// first user program that calls exec("/init")
 static INITCODE: [u8; 51] = [
-    0x17, 0x05, 0x00, 0x00, 0x13, 0x05, 0x05, 0x02,
-    0x97, 0x05, 0x00, 0x00, 0x93, 0x85, 0x05, 0x02,
-    0x9d, 0x48, 0x73, 0x00, 0x00, 0x00, 0x89, 0x48,
-    0x73, 0x00, 0x00, 0x00, 0xef, 0xf0, 0xbf, 0xff,
-    0x2f, 0x69, 0x6e, 0x69, 0x74, 0x00, 0x00, 0x01,
-    0x20, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-    0x00, 0x00, 0x00
+    0x17, 0x05, 0x00, 0x00, 0x13, 0x05, 0x05, 0x02, 0x97, 0x05, 0x00, 0x00, 0x93, 0x85, 0x05, 0x02,
+    0x9d, 0x48, 0x73, 0x00, 0x00, 0x00, 0x89, 0x48, 0x73, 0x00, 0x00, 0x00, 0xef, 0xf0, 0xbf, 0xff,
+    0x2f, 0x69, 0x6e, 0x69, 0x74, 0x00, 0x00, 0x01, 0x20, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00,
 ];

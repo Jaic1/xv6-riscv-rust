@@ -16,11 +16,14 @@ impl Syscall for Proc {
         match self.arg_str(0, &mut path) {
             Ok(_) => {
                 // debug
-                if let Ok(s) = str::from_utf8(&path) {
-                    println!("sys_exec: {}", s);
-                } else {
-                    panic!("sys_exec: unkown path");
+                print!("sys_exec: ");
+                for c in path.iter() {
+                    if *c == 0 {
+                        break
+                    }
+                    print!("{}", *c as char);
                 }
+                println!();
             }
             Err(str) => {
                 println!("sys_exec1: {}", str);
@@ -39,8 +42,7 @@ impl Syscall for Proc {
         // }
         // argv[1] = ptr::null_mut();
 
-        // TODO
-        
+        // TODO - ELF load
         panic!("sys_exec: end");
     }
 }

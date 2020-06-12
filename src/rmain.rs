@@ -1,7 +1,10 @@
 use core::sync::atomic::{AtomicBool, Ordering};
 
-use crate::process::{PROC_MANAGER, cpu_id, my_cpu};
+use crate::driver::virtio::disk_init;
+use crate::fs;
 use crate::mm::{kinit, kvm_init, kvm_init_hart};
+use crate::plic;
+use crate::process::{cpu_id, my_cpu, PROC_MANAGER};
 use crate::trap::trap_init_hart;
 
 /// Used by hart 0 to communicate with other harts.
@@ -23,9 +26,12 @@ pub unsafe fn rust_main() -> ! {
         kvm_init(); // init kernel page table
         PROC_MANAGER.proc_init(); // process table
         kvm_init_hart(); // trun on paging
-        trap_init_hart();   // install kernel trap vector
-
-        PROC_MANAGER.user_init();   // first user process
+        trap_init_hart(); // install kernel trap vector
+        plic::init();
+        plic::init_hart();
+        fs::binit(); // buffer cache
+        disk_init(); // emulated hard disk
+        PROC_MANAGER.user_init(); // first user process
 
         STARTED.store(true, Ordering::SeqCst);
     } else {
@@ -33,14 +39,15 @@ pub unsafe fn rust_main() -> ! {
 
         println!("hart {} starting", cpu_id());
         kvm_init_hart(); // turn on paging
-        trap_init_hart();   // install kernel trap vector
+        trap_init_hart(); // install kernel trap vector
+        plic::init_hart(); // ask PLIC for device interrupts
 
         // LTODO - init other things
         loop {}
     }
 
     #[cfg(feature = "unit_test")]
-        super::test_main_entry();
+    super::test_main_entry();
 
     // each cpu's lifetime start here?
     let c = my_cpu();

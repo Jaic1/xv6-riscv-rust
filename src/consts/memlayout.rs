@@ -28,6 +28,7 @@ pub const CLINT_MTIME: ConstAddr = CLINT.const_add(0xbff8);
 /// qemu puts UART registers here in physical memory.
 pub const UART0: ConstAddr = ConstAddr(0x10000000);
 pub const UART0_MAP_SIZE: usize = PGSIZE;
+pub const UART0_IRQ: usize = 10;
 
 /// virtio mmio interface
 pub const VIRTIO0: ConstAddr = ConstAddr(0x10001000);
