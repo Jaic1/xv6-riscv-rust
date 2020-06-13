@@ -122,9 +122,9 @@ Saving `sepc`(user program counter) in trampoline.S instead of in user_trap.
 - [x] add kernel trap handler(panic at `fork_ret`)
 - [x] add user trap returner and way to user space
 - [x] add user code space(initcode) and ecall handing in `user_trap`
-- [x] add virtio disk driver and plic
-- [ ] implement sys_exec and add elf loader
-- [ ] start to add fs
+- [x] add virtio disk driver, plic, buffer cache, inode
+- [ ] complete sys_exec and add elf loader
+- [ ] complete a runnable fs
 
 ## TODO
 - [ ] `mul a0, a0, a1` is not an error
