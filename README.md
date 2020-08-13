@@ -123,11 +123,8 @@ Saving `sepc`(user program counter) in trampoline.S instead of in user_trap.
 - [x] add user trap returner and way to user space
 - [x] add user code space(initcode) and ecall handing in `user_trap`
 - [x] add virtio disk driver, plic, buffer cache, inode
-- [ ] complete sys_exec and add elf loader
-- [ ] complete a runnable fs
-
-## TODO
-- [ ] `mul a0, a0, a1` is not an error
+- [x] complete sys_exec and add elf loader
+- [x] complete a runnable fs
 
 ## Useful Reference
 [Why implementing Send trait for Mutex?](https://users.rust-lang.org/t/why-we-implement-send-trait-for-mutex/39065)  

@@ -85,25 +85,33 @@ pub unsafe fn kalloc() -> Option<*mut u8> {
 #[cfg(feature = "unit_test")]
 pub mod tests {
     use super::*;
-    use crate::consts;
-    use crate::proc::cpu_id;
-    use crate::mm::pagetable::PageTable;
+    use crate::consts::NSMP;
+    use crate::process::cpu_id;
+    use crate::mm::{PageTable, Box};
     use core::sync::atomic::{AtomicU8, Ordering};
 
-    pub fn alloc_simo() {
+    pub fn mm_simo() {
         // use NSMP to synchronize testing pr's spinlock
-        static NSMP: AtomicU8 = AtomicU8::new(0);
-        NSMP.fetch_add(1, Ordering::Relaxed);
-        while NSMP.load(Ordering::Relaxed) != NSMP as u8 {}
+        static N: AtomicU8 = AtomicU8::new(0);
+        N.fetch_add(1, Ordering::Relaxed);
+        while N.load(Ordering::Relaxed) != NSMP as u8 {}
 
         let id = unsafe { cpu_id() };
 
         for _ in 0..10 {
-            let page_table = PageTable::new();
-            println!("hart {} alloc page table at {:#x}", id, page_table.addr());
+            match unsafe {kalloc()} {
+                Some(ptr) => {},
+                None => {
+                    panic!("mm_alloc test ...fail!");
+                }
+            }
         }
 
-        NSMP.fetch_sub(1, Ordering::Relaxed);
-        while NSMP.load(Ordering::Relaxed) != 0 {}
+        N.fetch_sub(1, Ordering::Relaxed);
+        while N.load(Ordering::Relaxed) != 0 {}
+
+        if id == 0 {
+            println!("mm_alloc test ...pass!");
+        }
     }
 }

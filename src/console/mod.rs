@@ -1,9 +1,11 @@
+//! UART interface and driver
+
 use crate::consts::CONSOLE_BUF as INPUT_BUF;
 use crate::spinlock::SpinLock;
 
-mod uart;
+pub mod uart;
 
-struct Cons {
+pub struct Cons {
     buf: [u8; INPUT_BUF],
     r: usize, // Read index
     w: usize, // Write index

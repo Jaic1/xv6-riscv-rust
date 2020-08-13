@@ -1,17 +1,18 @@
+//! file system module
+
 use core::cell::Cell;
 use core::option::Option;
 use core::ptr;
 
-mod bio;
-mod dir;
-mod inode;
+pub mod bio;
+pub mod dir;
+pub mod inode;
 
 pub use bio::binit;
 
 use bio::{bread, brelse};
 use inode::iget;
 
-// LTODO - just put all the consts relevant to fs to here tmp
 pub const BSIZE: usize = 1024;
 const NINODE: usize = 50;
 const NDIRECT: usize = 12;
@@ -66,7 +67,6 @@ impl Inode {
     }
 }
 
-/// LTODO - may consider arc, rc, cell, unsafecell
 pub struct Buf {
     valid: Cell<bool>,
     pub disk: Cell<bool>,

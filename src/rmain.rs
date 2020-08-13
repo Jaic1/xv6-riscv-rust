@@ -1,3 +1,5 @@
+//! main initialization process after hardware initialization
+
 use core::sync::atomic::{AtomicBool, Ordering};
 
 use crate::driver::virtio::disk_init;
@@ -23,33 +25,33 @@ pub unsafe fn rust_main() -> ! {
         println!("xv6-riscv-rust is booting");
         println!();
         kinit();
-        kvm_init(); // init kernel page table
-        PROC_MANAGER.proc_init(); // process table
-        kvm_init_hart(); // trun on paging
-        trap_init_hart(); // install kernel trap vector
+        kvm_init();                 // init kernel page table
+        PROC_MANAGER.proc_init();   // process table
+        kvm_init_hart();            // trun on paging
+        trap_init_hart();           // install kernel trap vector
         plic::init();
         plic::init_hart();
-        fs::binit(); // buffer cache
-        disk_init(); // emulated hard disk
-        PROC_MANAGER.user_init(); // first user process
+        fs::binit();                // buffer cache
+        disk_init();                // emulated hard disk
+        PROC_MANAGER.user_init();   // first user process
 
         STARTED.store(true, Ordering::SeqCst);
     } else {
         while !STARTED.load(Ordering::SeqCst) {}
 
         println!("hart {} starting", cpu_id());
-        kvm_init_hart(); // turn on paging
-        trap_init_hart(); // install kernel trap vector
-        plic::init_hart(); // ask PLIC for device interrupts
+        kvm_init_hart();            // turn on paging
+        trap_init_hart();           // install kernel trap vector
+        plic::init_hart();          // ask PLIC for device interrupts
 
-        // LTODO - init other things
+        #[cfg(not(feature = "unit_test"))]
         loop {}
     }
 
     #[cfg(feature = "unit_test")]
     super::test_main_entry();
 
-    // each cpu's lifetime start here?
+    // each cpu's lifetime start here
     let c = my_cpu();
     c.scheduler();
 }

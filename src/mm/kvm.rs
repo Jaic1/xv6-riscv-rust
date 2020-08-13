@@ -84,12 +84,12 @@ pub unsafe fn kvm_init() {
 }
 
 pub unsafe fn kvm_map(va: VirtAddr, pa: PhysAddr, size: usize, perm: PteFlag) {
-    println!(
-        "kvm_map: va={:#x}, pa={:#x}, size={:#x}",
-        va.as_usize(),
-        pa.as_usize(),
-        size
-    );
+    // println!(
+    //     "kvm_map: va={:#x}, pa={:#x}, size={:#x}",
+    //     va.as_usize(),
+    //     pa.as_usize(),
+    //     size
+    // );
 
     if let Err(err) = KERNEL_PAGE_TABLE.map_pages(va, size, pa, perm) {
         panic!("kvm_map: {}", err);

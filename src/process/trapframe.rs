@@ -1,3 +1,5 @@
+//! trap frame is used to store register states, when doing user-kernel space switching 
+
 #[repr(C)]
 pub struct TrapFrame {
     /*   0 */ pub kernel_satp: usize,   // kernel page table

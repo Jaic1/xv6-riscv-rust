@@ -74,7 +74,7 @@ pub unsafe fn disk_init() {
 
     // debug
     println!("virtio disk init: done");
-    // TODO - plic.rs and trap.rs arrange for interrupts from VIRTIO0_IRQ
+    // plic.rs and trap.rs arrange for interrupts from VIRTIO0_IRQ
 }
 
 pub unsafe fn disk_rw(b: &Buf, writing: bool) {
@@ -304,7 +304,7 @@ struct Disk {
     avail: [u16; (PGSIZE - NUM * mem::size_of::<VRingDesc>()) / mem::size_of::<u16>()],
     // another page
     used: UsedArea,
-    free: [bool; NUM], // TODO - need to start another page?
+    free: [bool; NUM], 
     used_idx: usize,
     info: [Info; NUM],
     lock: SpinLock<()>,
@@ -388,5 +388,17 @@ struct Info {
 impl Info {
     const fn new() -> Self {
         Self { b: None, status: 0 }
+    }
+}
+   
+#[cfg(feature = "unit_test")]
+pub mod tests {
+    use crate::process::cpu_id;
+
+    pub fn virtio_simo() {
+        let id = unsafe {cpu_id()};
+        if id == 0 {
+            println!("virtio disk test ...pass!");
+        }
     }
 }

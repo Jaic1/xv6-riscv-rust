@@ -1,6 +1,5 @@
-//! spinlock module
-//! unlike xv6-riscv, xv6-riscv-rust wraps data into a spinlock
-//! useful reference crate spin(https://crates.io/crates/spin)
+//! spinlock module,
+//! contains self-implemented mutex/spinlock
 
 use core::cell::{Cell, UnsafeCell};
 use core::ops::{Deref, DerefMut, Drop};
@@ -137,7 +136,6 @@ impl<'a, T: ?Sized> Drop for SpinLockGuard<'a, T> {
     }
 }
 
-/// Copy from crate spin(https://crates.io/crates/spin)
 #[cfg(feature = "unit_test")]
 pub mod tests {
     use super::*;
@@ -146,5 +144,10 @@ pub mod tests {
         let m = SpinLock::new((), "smoke");
         m.lock();
         m.lock();
+
+        let id = unsafe {cpu_id()};
+        if id == 0 {
+            println!("spinlock smoke test ...pass!");
+        }
     }
 }

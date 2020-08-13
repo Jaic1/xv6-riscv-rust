@@ -1,3 +1,5 @@
+//! abstraction for CPU
+
 use crate::register::{tp, sie, sstatus};
 use crate::consts::NCPU;
 
@@ -212,4 +214,31 @@ pub fn pop_off() {
 pub fn intr_on() {
     sie::intr_on();
     sstatus::intr_on();
+}
+
+#[cfg(feature = "unit_test")]
+pub mod tests {
+    use super::*;
+    use crate::consts::NSMP;
+    use crate::process::cpu_id;
+    use crate::mm::{PageTable, Box};
+    use core::sync::atomic::{AtomicU8, Ordering};
+
+    pub fn cpu_id_test() {
+        // use NSMP to synchronize testing pr's spinlock
+        static N: AtomicU8 = AtomicU8::new(0);
+        N.fetch_add(1, Ordering::Relaxed);
+        while N.load(Ordering::Relaxed) != NSMP as u8 {}
+
+        let id = unsafe { cpu_id() };
+
+        println!("cpu's id/hart is {}", id);
+
+        N.fetch_sub(1, Ordering::Relaxed);
+        while N.load(Ordering::Relaxed) != 0 {}
+
+        if id == 0 {
+            println!("cpu_id test ...pass!");
+        }
+    }
 }

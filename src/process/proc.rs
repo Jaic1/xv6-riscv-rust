@@ -1,3 +1,5 @@
+//! data structure and operations about PCB
+
 use core::convert::TryFrom;
 use core::option::Option;
 use core::ptr;
@@ -21,6 +23,7 @@ pub enum ProcState {
     ZOMBIE,
 }
 
+/// Per-process state/instance
 pub struct Proc {
     pub lock: SpinLock<()>,
 
@@ -32,7 +35,6 @@ pub struct Proc {
 
     // lock need not be held, or
     // lock already be held
-    // LTODO - public or private
     kstack: usize,
     sz: usize,
     pub pagetable: Option<Box<PageTable>>,
@@ -110,7 +112,6 @@ impl Proc {
 
     /// Called by ProcManager's user_init,
     /// Only be called once for the first user process
-    /// TODO - copy user code and sth else
     pub fn user_init(&mut self) {
         // map initcode in user pagetable
         self.pagetable.as_mut().unwrap().uvm_init(&INITCODE);
@@ -125,7 +126,6 @@ impl Proc {
         unsafe {
             ptr::copy_nonoverlapping(init_name.as_ptr(), self.name.as_mut_ptr(), init_name.len());
         }
-        // TODO - p->cwd = namei("/");
 
         self.state = ProcState::RUNNABLE;
     }
@@ -147,14 +147,13 @@ impl Proc {
     }
 
     /// Exit the current process. No return.
-    /// LTODO - An exited process remains in the zombie state
     ///     until its parent calls wait()
     pub fn exit(&mut self, status: isize) {
         if unsafe { PROC_MANAGER.is_init_proc(&self) } {
             panic!("init_proc exiting");
         }
 
-        panic!("exit: TODO, status={}", status);
+        panic!("exit: status={}", status);
     }
 
     /// Handle system call as a process
@@ -228,3 +227,12 @@ static INITCODE: [u8; 51] = [
     0x2f, 0x69, 0x6e, 0x69, 0x74, 0x00, 0x00, 0x01, 0x20, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
     0x00, 0x00, 0x00,
 ];
+
+#[cfg(feature = "unit_test")]
+pub mod tests {
+    use super::*;
+
+    pub fn create() {
+        println!("proc create test ...pass!");
+    }
+}

@@ -26,20 +26,19 @@ impl Bcache {
 
 pub unsafe fn binit() {
     // Create linked list of buffers
-    // BCACHE.head.prev = Some(&mut BCACHE.head as *mut Buf);
-    // BCACHE.head.next = Some(&mut BCACHE.head as *mut Buf);
-    // for b in BCACHE.bufs.iter_mut() {
-    //     b.next = BCACHE.head.next.clone();
-    //     b.prev = Some(&mut BCACHE.head as *mut Buf);
-    //     let ori_next = BCACHE.head.next.replace(b as *mut Buf).unwrap();
-    //     (*ori_next).prev = Some(b as *mut Buf);
-    // }
+    BCACHE.head.prev = Some(&mut BCACHE.head as *mut Buf);
+    BCACHE.head.next = Some(&mut BCACHE.head as *mut Buf);
+    for b in BCACHE.bufs.iter_mut() {
+        b.next = BCACHE.head.next.clone();
+        b.prev = Some(&mut BCACHE.head as *mut Buf);
+        let ori_next = BCACHE.head.next.replace(b as *mut Buf).unwrap();
+        (*ori_next).prev = Some(b as *mut Buf);
+    }
 }
 
 /// Look through buffer cache for block on device dev.
 /// If not found, allocate a buffer.
 /// In either case, return locked buffer.
-/// LTODO - just loop the bufs to find empty(refcnt=0) buffer
 unsafe fn bget(dev: u32, blockno: u32) -> &'static Buf {
     let bcache = BCACHE.lock.lock();
 

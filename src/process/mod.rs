@@ -1,3 +1,5 @@
+//! process module, contains cpu, proc, context, trapframe and syscall 
+
 use core::convert::TryFrom;
 use core::ptr;
 
@@ -9,12 +11,12 @@ use crate::fs::{self, ROOTDEV};
 
 pub use cpu::{cpu_id, push_off, pop_off, my_cpu, my_proc};
 
-mod context;
-mod proc;
-mod cpu;
-mod trapframe;
-mod syscall;
-mod elf;
+pub mod context;
+pub mod proc;
+pub mod cpu;
+pub mod trapframe;
+pub mod syscall;
+pub mod elf;
 
 use context::Context;
 use proc::{Proc, ProcState};

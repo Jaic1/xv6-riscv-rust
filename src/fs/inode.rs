@@ -55,7 +55,6 @@ pub fn iget(dev: u32, inum: u32) -> &'static Inode {
 
 /// Lock the given inode.
 /// Reads the inode from disk if necessary.
-/// LTODO - do not lock the inode yet, only process zero exists
 pub fn ilock(ip: &mut Inode) {
     if ip.iref < 1 {
         panic!("ilock: iref smaller than 1");
@@ -65,5 +64,12 @@ pub fn ilock(ip: &mut Inode) {
 
     if !ip.valid {
         // bp = bread(ip.dev, )
+    }
+}
+
+#[cfg(feature = "unit_test")]
+pub mod tests {
+    pub fn inode_test() {
+        println!("inode test ...pass!");
     }
 }

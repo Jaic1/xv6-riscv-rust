@@ -1,3 +1,5 @@
+//! a small bootloader, jumped from assembly code
+
 use core::convert::Into;
 
 use crate::consts::{CLINT_MTIMECMP, NCPU};

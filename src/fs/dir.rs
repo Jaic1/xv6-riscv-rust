@@ -7,8 +7,7 @@ pub fn namei(path: &[u8]) -> &Inode {
     namex(path, false, &mut name)
 }
 
-// TODO
-fn namex(mut path: &[u8], nameparent: bool, name: &mut [u8]) -> &'static Inode {
+fn namex(path: &[u8], nameparent: bool, name: &mut [u8]) -> &'static Inode {
     if path[0] != b'/' {
         panic!("namex: path={:?}, not start as root", path);
     }

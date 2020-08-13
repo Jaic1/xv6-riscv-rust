@@ -1,3 +1,5 @@
+//! utilize the uart serial port to output texts to screen
+
 use crate::console;
 use crate::spinlock::SpinLock;
 use core::fmt;
@@ -85,22 +87,26 @@ fn abort() -> ! {
 #[cfg(feature = "unit_test")]
 pub mod tests {
     use crate::consts::NSMP;
-    use crate::proc::cpu_id;
+    use crate::process::cpu_id;
     use core::sync::atomic::{AtomicU8, Ordering};
 
     pub fn println_simo() {
-        let cpu_id = unsafe { cpu_id() };
+        let id = unsafe { cpu_id() };
 
         // use NSMP to synchronize testing pr's spinlock
-        static NSMP: AtomicU8 = AtomicU8::new(0);
-        NSMP.fetch_add(1, Ordering::Relaxed);
-        while NSMP.load(Ordering::Relaxed) != NSMP as u8 {}
+        static N: AtomicU8 = AtomicU8::new(0);
+        N.fetch_add(1, Ordering::Relaxed);
+        while N.load(Ordering::Relaxed) != NSMP as u8 {}
 
         for i in 0..10 {
-            println!("println_mul_hart{}: hart {}", i, cpu_id);
+            println!("println {} times: hart {}", i, id);
         }
 
-        NSMP.fetch_sub(1, Ordering::Relaxed);
-        while NSMP.load(Ordering::Relaxed) != 0 {}
+        N.fetch_sub(1, Ordering::Relaxed);
+        while N.load(Ordering::Relaxed) != 0 {}
+
+        if id == 0 {
+            println!("println_simo test ...pass!");
+        }
     }
 }

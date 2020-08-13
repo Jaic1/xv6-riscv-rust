@@ -33,16 +33,15 @@ impl Syscall for Proc {
 
         // tmp ignore argv, i.e., only have path as first argument
         // also not copy any content from user to kernel
-        // let mut argv: [*mut u8; MAXARG] = [ptr::null_mut(); MAXARG];
-        // let argv_addr: *const usize = self.arg_addr(1);
-        // argv[0] = unsafe {*argv_addr} as *mut u8;
-        // argv[1] = unsafe {*argv_addr.offset(1)} as *mut u8;
-        // if argv[1] as usize != 0 {
-        //     panic!("argv[1] is not 0, is {}...", unsafe {*argv[1]});
-        // }
-        // argv[1] = ptr::null_mut();
+        let mut argv: [*mut u8; MAXARG] = [ptr::null_mut(); MAXARG];
+        let argv_addr: *const usize = self.arg_addr(1);
+        argv[0] = unsafe {*argv_addr} as *mut u8;
+        argv[1] = unsafe {*argv_addr.offset(1)} as *mut u8;
+        if argv[1] as usize != 0 {
+            panic!("argv[1] is not 0, is {}...", unsafe {*argv[1]});
+        }
+        argv[1] = ptr::null_mut();
 
-        // TODO - ELF load
         panic!("sys_exec: end");
     }
 }

@@ -278,3 +278,37 @@ impl PageTable {
         Err("copy_in_str: dst not enough space")
     }
 }
+
+#[cfg(feature = "unit_test")]
+pub mod tests {
+    use super::*;
+    use crate::consts::NSMP;
+    use crate::process::cpu_id;
+    use crate::mm::{PageTable, Box};
+    use core::sync::atomic::{AtomicU8, Ordering};
+
+    pub fn alloc_simo() {
+        // use NSMP to synchronize testing pr's spinlock
+        static N: AtomicU8 = AtomicU8::new(0);
+        N.fetch_add(1, Ordering::Relaxed);
+        while N.load(Ordering::Relaxed) != NSMP as u8 {}
+
+        let id = unsafe { cpu_id() };
+
+        for _ in 0..10 {
+            if let Some(page_table) = Box::<PageTable>::new() {
+                // println!("hart {} alloc page table at {:?}", id, &*page_table as *const _);
+            } else {
+                println!("hart {} cannot alloc page table", id);
+            }
+            
+        }
+
+        N.fetch_sub(1, Ordering::Relaxed);
+        while N.load(Ordering::Relaxed) != 0 {}
+
+        if id == 0 {
+            println!("alloc_simo test ...pass!");
+        }
+    }
+}
