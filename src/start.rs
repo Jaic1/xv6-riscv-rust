@@ -1,6 +1,6 @@
 use core::convert::Into;
 
-use crate::consts::{CLINT_MTIMECMP, NCPU};
+use crate::{consts::{CLINT_MTIMECMP, NCPU}, register::sie};
 use crate::register::{
     clint, medeleg, mepc, mhartid, mideleg, mie, mscratch, mstatus, mtvec, satp, tp,
 };
@@ -23,6 +23,7 @@ pub unsafe fn start() -> ! {
     // delegate all interrupts and exceptions to supervisor mode.
     medeleg::write(0xffff);
     mideleg::write(0xffff);
+    sie::intr_on();
 
     // ask for clock interrupts.
     timerinit();

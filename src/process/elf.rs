@@ -6,7 +6,7 @@ use super::Proc;
 /// note: it can get the mut reference of a Proc,
 ///     because it will be valid until it calls exit itself
 /// TODO
-pub fn load(p: &mut Proc, path: &[u8]) -> Result<(), &'static str> {
+pub fn load(_p: &mut Proc, _path: &[u8]) -> Result<(), &'static str> {
     // get relevant inode using path
 
     // check elf header, create new empty pagetable for user

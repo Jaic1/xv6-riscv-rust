@@ -1,54 +1,61 @@
 use core::convert::TryFrom;
 use core::option::Option;
 use core::ptr;
+use core::cell::UnsafeCell;
 
-use crate::consts::{PGSIZE, TRAMPOLINE, TRAPFRAME};
+use crate::{consts::{PGSIZE, TRAMPOLINE, TRAPFRAME}, register::sstatus};
 use crate::mm::{Box, PageTable, PhysAddr, PteFlag, VirtAddr};
 use crate::register::{satp, sepc};
 use crate::spinlock::{SpinLock, SpinLockGuard};
 use crate::trap::user_trap;
 
-use super::syscall::Syscall;
-use super::{cpu, PROC_MANAGER, my_cpu};
-use super::{cpu_id, fork_ret, Context, TrapFrame};
+use super::{CpuManager, syscall::Syscall};
+use super::PROC_MANAGER;
+use super::cpu::CPU_MANAGER;
+use super::{fork_ret, Context, TrapFrame};
 
-#[derive(Eq, PartialEq, Debug)]
+#[derive(Clone, Copy, Eq, PartialEq, Debug)]
 pub enum ProcState {
     UNUSED,
     SLEEPING,
     RUNNABLE,
     RUNNING,
+    ALLOCATED,
     ZOMBIE,
 }
 
-pub struct Proc {
-    pub lock: SpinLock<()>,
-
-    // p->lock must be held when using these:
+/// Exclusive to the process
+pub struct ProcExcl {
     pub state: ProcState,
-    pub chan: usize,
-    pub killed: bool,
+    pub channel: usize,
     pub pid: usize,
+}
 
-    // lock need not be held, or
-    // lock already be held
-    // LTODO - public or private
+impl ProcExcl {
+    const fn new() -> Self {
+        Self {
+            state: ProcState::UNUSED,
+            channel: 0,
+            pid: 0,
+        }
+    }
+}
+
+/// Data private to the process
+/// Only accessed by the current process when it is running,
+/// or initialed by other process(e.g. fork) with ProcExcl lock held
+pub struct ProcData {
     kstack: usize,
     sz: usize,
-    pub pagetable: Option<Box<PageTable>>,
-    pub tf: *mut TrapFrame,
+    pagetable: Option<Box<PageTable>>,
+    tf: *mut TrapFrame,
     context: Context,
     name: [u8; 16],
 }
 
-impl Proc {
-    pub const fn new() -> Self {
+impl ProcData {
+    const fn new() -> Self {
         Self {
-            lock: SpinLock::new((), "proc"),
-            state: ProcState::UNUSED,
-            chan: 0,
-            killed: false,
-            pid: 0,
             kstack: 0,
             sz: 0,
             pagetable: None,
@@ -58,6 +65,7 @@ impl Proc {
         }
     }
 
+    /// Set kstack
     pub fn set_kstack(&mut self, kstack: usize) {
         self.kstack = kstack;
     }
@@ -90,6 +98,7 @@ impl Proc {
         self.pagetable = Some(pagetable);
     }
 
+    /// Set trapframe
     pub fn set_tf(&mut self, tf: *mut TrapFrame) {
         self.tf = tf;
     }
@@ -104,33 +113,12 @@ impl Proc {
     }
 
     /// Return the process's mutable reference of context
-    pub fn get_context_mut(&mut self) -> &mut Context {
-        &mut self.context
+    pub fn get_context(&mut self) -> *mut Context {
+        &mut self.context as *mut _
     }
 
-    /// Called by ProcManager's user_init,
-    /// Only be called once for the first user process
-    /// TODO - copy user code and sth else
-    pub fn user_init(&mut self) {
-        // map initcode in user pagetable
-        self.pagetable.as_mut().unwrap().uvm_init(&INITCODE);
-        self.sz = PGSIZE;
-
-        // prepare return pc and stack pointer
-        let tf: &mut TrapFrame = unsafe { &mut *self.tf };
-        tf.epc = 0;
-        tf.set_sp(PGSIZE);
-
-        let init_name = b"initcode\0";
-        unsafe {
-            ptr::copy_nonoverlapping(init_name.as_ptr(), self.name.as_mut_ptr(), init_name.len());
-        }
-        // TODO - p->cwd = namei("/");
-
-        self.state = ProcState::RUNNABLE;
-    }
-
-    // Prepare things before sret to user space
+    /// Prepare for the user trap return
+    /// Return current proc's satp for assembly code to switch page table
     pub fn user_ret_prepare(&mut self) -> usize {
         let tf: &mut TrapFrame = unsafe { &mut *self.tf };
         tf.kernel_satp = satp::read();
@@ -138,17 +126,67 @@ impl Proc {
         // after returning to the kernel space
         tf.kernel_sp = self.kstack + PGSIZE;
         tf.kernel_trap = user_trap as usize;
-        tf.kernel_hartid = unsafe { cpu_id() };
+        tf.kernel_hartid = unsafe { CpuManager::cpu_id() };
 
         // restore the user pc previously stored in sepc
         sepc::write(tf.epc);
 
         self.pagetable.as_ref().unwrap().as_satp()
     }
+}
+
+/// Process Struct
+/// 
+/// ProcData could be protected by RefCell,
+/// but in case when the process is mutating the ProcData,
+/// but then if it is interrupted and get killed, so it need to
+/// clean its ProcData, so UnsafeCell is better.
+/// 
+/// TODO - 12/19 get away from Clone and Copy
+pub struct Proc {
+    pub excl: SpinLock<ProcExcl>,
+    pub data: UnsafeCell<ProcData>,
+
+    killed: bool,
+}
+
+impl Proc {
+    pub const fn new() -> Self {
+        Self {
+            excl: SpinLock::new(ProcExcl::new(), "ProcExcl"),
+            data: UnsafeCell::new(ProcData::new()),
+            killed: false,
+        }
+    }
+
+    /// Called by ProcManager's user_init,
+    /// Only be called once for the first user process
+    /// TODO - copy user code and sth else
+    pub fn user_init(&mut self) {
+        let pd = self.data.get_mut();
+
+        // map initcode in user pagetable
+        pd.pagetable.as_mut().unwrap().uvm_init(&INITCODE);
+        pd.sz = PGSIZE;
+
+        // prepare return pc and stack pointer
+        let tf = unsafe { &mut *pd.tf };
+        tf.epc = 0;
+        tf.sp = PGSIZE;
+
+        let init_name = b"initcode\0";
+        unsafe {
+            ptr::copy_nonoverlapping(
+                init_name.as_ptr(), 
+                pd.name.as_mut_ptr(),
+                init_name.len()
+            );
+        }
+
+        // TODO - p->cwd = namei("/");
+    }
 
     /// Exit the current process. No return.
-    /// LTODO - An exited process remains in the zombie state
-    ///     until its parent calls wait()
     pub fn exit(&mut self, status: isize) {
         if unsafe { PROC_MANAGER.is_init_proc(&self) } {
             panic!("init_proc exiting");
@@ -157,66 +195,107 @@ impl Proc {
         panic!("exit: TODO, status={}", status);
     }
 
-    /// Handle system call as a process
-    /// It may be interrrupted in the procedure of syscall
-    /// Cpu's syscall jumps here
-    pub fn syscall(&mut self) {
-        let a7 = {
-            let tf = unsafe { &mut *self.tf };
-            tf.admit_ecall();
-            tf.get_a7()
-        };
-        cpu::intr_on();
-
-        let return_a0 = match a7 {
-            7 => self.sys_exec(),
-            _ => {
-                panic!("unknown syscall");
-            }
-        };
-        let tf = unsafe { &mut *self.tf };
-        tf.set_a0(return_a0);
+    /// Abondon current process if
+    /// the killed flag is true
+    pub fn check_abondon(&mut self, status: isize) {
+        if self.killed {
+            self.exit(status);
+        }
     }
 
-    /// Atomically release lock and sleep on chan.
-    /// Reacquires lock when awakened.
-    pub fn sleep<'a, T>(
-        &mut self,
-        chan: usize,
-        lk: &'a SpinLock<T>,
-        guard: SpinLockGuard<'a, T>,
-    ) -> SpinLockGuard<'a, T> {
-        let same_lock: bool = ptr::eq(
-            lk as *const _ as *const T,
-            &self.lock as *const _ as *const T,
-        );
+    /// Abondon current process by:
+    /// 1. setting its killed flag to true
+    /// 2. and then exit
+    pub fn abondon(&mut self, status: isize) {
+        self.killed = true;
+        self.exit(status);
+    }
 
-        if !same_lock {
-            unsafe {self.lock.acquire_lock();}
-            drop(guard);
+    /// Handle system call
+    /// It may be interrrupted in the procedure of syscall
+    pub fn syscall(&mut self) {
+        sstatus::intr_on();
 
-            self.chan = chan;
-            self.state = ProcState::SLEEPING;
-            unsafe {
-                let c = my_cpu();
-                c.sched();
+        let tf = unsafe { &mut *self.data.get_mut().tf };
+        let a7 = tf.a7;
+        tf.admit_ecall();
+        tf.a0 = match a7 {
+            7 => self.sys_exec(),
+            _ => {
+                panic!("unknown syscall num: {}", a7);
             }
-            self.chan = 0;
+        };
+    }
 
-            // reacquire the original lock
-            unsafe {self.lock.release_lock();}
-            lk.lock()
+    /// Give up the current runing process in this cpu
+    /// Change the name to yielding, because `yield` is a key word
+    pub fn yielding(&mut self) {
+        let mut guard = self.excl.lock();
+        assert_eq!(guard.state, ProcState::RUNNING);
+        guard.state = ProcState::RUNNABLE;
+        guard = unsafe { CPU_MANAGER.my_cpu_mut().sched(guard,
+            &mut self.data.get_mut().context as *mut _) };
+        drop(guard);
+    }
+
+    /// Atomically release a spinlock and sleep on chan.
+    /// The passed-in guard should not the proc's guard,
+    /// otherwise it will deadlock(because it acquires proc's lock first).
+    /// Do not reacquires lock when awakened,
+    /// so the caller must reacquire it if needed. 
+    pub fn sleep<T>(&self, channel: usize, guard: SpinLockGuard<T>) {
+        // From xv6-riscv:
+        // Must acquire p->lock in order to
+        // change p->state and then call sched.
+        // Once we hold p->lock, we can be
+        // guaranteed that we won't miss any wakeup
+        // (wakeup locks p->lock),
+        // so it's okay to release lk.
+        let mut excl_guard = self.excl.lock();
+        drop(guard);
+
+        // go to sleep
+        excl_guard.channel = channel;
+        excl_guard.state = ProcState::SLEEPING;
+
+        unsafe {
+            let c = CPU_MANAGER.my_cpu_mut();
+            excl_guard = c.sched(excl_guard, 
+                &mut (*self.data.get()).context as *mut _);
         }
-        else {
-            self.chan = chan;
-            self.state = ProcState::SLEEPING;
-            unsafe {
-                let c = my_cpu();
-                c.sched();
+
+        excl_guard.channel = 0;
+        drop(excl_guard);
+    }
+}
+
+/// From syscall.rs
+/// TODO - subject to change
+impl Proc {
+    pub fn arg_raw(&self, n: usize) -> usize {
+        let tf = unsafe { &mut *(*self.data.get()).tf };
+        match n {
+            0 => {tf.a0}
+            1 => {tf.a1}
+            2 => {tf.a2}
+            3 => {tf.a3}
+            4 => {tf.a4}
+            5 => {tf.a5}
+            _ => {
+                panic!("argraw: n is larger than 5");
             }
-            self.chan = 0;
-            guard
         }
+    }
+
+    pub fn arg_addr(&self, n: usize) -> *const usize {
+        self.arg_raw(n) as *const usize
+    }
+
+    pub fn arg_str(&self, n: usize, buf: &mut [u8]) -> Result<(), &'static str> {
+        let addr: usize = self.arg_raw(n);
+        let pagetable = unsafe { (*self.data.get()).pagetable.as_ref().unwrap() };
+        pagetable.copy_in_str(addr, buf)?;
+        Ok(())
     }
 }
 

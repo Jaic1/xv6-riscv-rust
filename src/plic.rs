@@ -2,8 +2,8 @@
 
 use core::ptr;
 
+use crate::process::CpuManager;
 use crate::consts::{PLIC, UART0_IRQ, VIRTIO0_IRQ};
-use crate::process::cpu_id;
 
 pub unsafe fn init() {
     // set desired IRQ priorities non-zero (otherwise disabled)
@@ -11,21 +11,20 @@ pub unsafe fn init() {
     write(VIRTIO0_IRQ*4, 1);
 }
 
-pub unsafe fn init_hart() {
-    let hart: usize = cpu_id();
+pub unsafe fn init_hart(hart: usize) {
     write(SENABLE+SENABLE_HART*hart, (1<<UART0_IRQ)|(1<<VIRTIO0_IRQ));
     write(SPRIORITY+SPRIORITY_HART*hart, 0);
 }
 
 /// ask the PLIC what interrupt we should serve
 pub fn claim() -> u32 {
-    let hart: usize = unsafe {cpu_id()};
+    let hart: usize = unsafe {CpuManager::cpu_id()};
     read(SCLAIM+SCLAIM_HART*hart)
 }
 
 /// tell the PLIC we've served this IRQ
 pub fn complete(irq: u32) {
-    let hart: usize = unsafe {cpu_id()};
+    let hart: usize = unsafe {CpuManager::cpu_id()};
     write(SCLAIM+SCLAIM_HART*hart, irq);
 }
 

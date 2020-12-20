@@ -1,7 +1,6 @@
-use core::{mem, ptr, str};
+use core::mem;
 
-use crate::consts::{MAXPATH, MAXARG};
-
+use crate::consts::{MAXPATH};
 use super::proc::Proc;
 
 pub trait Syscall {
@@ -44,32 +43,5 @@ impl Syscall for Proc {
 
         // TODO - ELF load
         panic!("sys_exec: end");
-    }
-}
-
-impl Proc {
-    fn arg_raw(&self, n: usize) -> usize {
-        let tf = unsafe {&*self.tf};
-        match n {
-            0 => {tf.get_a0()}
-            1 => {tf.get_a1()}
-            2 => {tf.get_a2()}
-            3 => {tf.get_a3()}
-            4 => {tf.get_a4()}
-            5 => {tf.get_a5()}
-            _ => {
-                panic!("argraw: n is larger than 5");
-            }
-        }
-    }
-
-    fn arg_addr(&self, n: usize) -> *const usize {
-        self.arg_raw(n) as *const usize
-    }
-
-    fn arg_str(&self, n: usize, buf: &mut [u8]) -> Result<(), &'static str> {
-        let addr: usize = self.arg_raw(n);
-        self.pagetable.as_ref().unwrap().copy_in_str(addr, buf)?;
-        Ok(())
     }
 }

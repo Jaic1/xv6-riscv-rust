@@ -18,10 +18,8 @@ unsafe fn write(x: usize) {
 
 /// enable all software interrupts
 /// still need to set SIE bit in sstatus
-pub fn intr_on() {
-    unsafe {
-        let mut sie = read();
-        sie |= SSIE | STIE | SEIE;
-        write(sie);
-    }
+pub unsafe fn intr_on() {
+    let mut sie = read();
+    sie |= SSIE | STIE | SEIE;
+    write(sie);
 }

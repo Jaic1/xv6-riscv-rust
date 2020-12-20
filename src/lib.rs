@@ -4,6 +4,7 @@
 #![feature(const_in_array_repeat_expressions)]
 #![feature(global_asm)]
 #![feature(ptr_internals)]
+#![feature(unsafe_cell_get_mut)]
 #![allow(dead_code)]
 
 #[macro_use]
@@ -25,6 +26,7 @@ mod process;
 mod register;
 mod rmain;
 mod spinlock;
+mod sleeplock;
 mod start;
 mod string;
 mod trap;

@@ -1,11 +1,11 @@
 use core::cell::Cell;
-use core::option::Option;
 use core::ptr;
 
 mod bio;
 mod dir;
 mod inode;
 
+pub use bio::Buf;
 pub use bio::binit;
 
 use bio::{bread, brelse};
@@ -46,7 +46,7 @@ pub struct Inode {
     minor: Cell<u16>,
     nlink: Cell<u16>,
     size: Cell<u32>,
-    addrs: [Cell<u32>; NDIRECT + 1],
+    addrs: Cell<[u32; NDIRECT + 1]>,
 }
 
 impl Inode {
@@ -61,34 +61,7 @@ impl Inode {
             minor: Cell::new(0),
             nlink: Cell::new(0),
             size: Cell::new(0),
-            addrs: [Cell::new(0); NDIRECT + 1],
-        }
-    }
-}
-
-/// LTODO - may consider arc, rc, cell, unsafecell
-pub struct Buf {
-    valid: Cell<bool>,
-    pub disk: Cell<bool>,
-    dev: u32,
-    pub blockno: u32,
-    refcnt: usize,
-    prev: Option<*mut Buf>,
-    next: Option<*mut Buf>,
-    pub data: [u8; BSIZE],
-}
-
-impl Buf {
-    const fn new() -> Self {
-        Self {
-            valid: Cell::new(false),
-            disk: Cell::new(false),
-            dev: 0,
-            blockno: 0,
-            refcnt: 0,
-            prev: None,
-            next: None,
-            data: [0; BSIZE],
+            addrs: Cell::new([0; NDIRECT + 1]),
         }
     }
 }

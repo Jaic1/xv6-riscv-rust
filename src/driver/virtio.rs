@@ -1,16 +1,19 @@
 //! from xv6-riscv:
 //! driver for virtio device, only used for disk now
 
+use array_const_fn_init::array_const_fn_init;
+
 use core::convert::TryFrom;
 use core::option::Option;
 use core::sync::atomic::{fence, Ordering};
-use core::{mem, ptr};
+use core::mem;
+use core::ptr;
 
 use crate::consts::{PGSHIFT, PGSIZE, VIRTIO0};
 use crate::fs::{Buf, BSIZE};
 use crate::mm::{kvm_pa, VirtAddr};
-use crate::process::my_proc;
 use crate::spinlock::SpinLock;
+use crate::process::{PROC_MANAGER, CPU_MANAGER};
 
 static mut DISK: Disk = Disk::new();
 
@@ -77,10 +80,10 @@ pub unsafe fn disk_init() {
     // TODO - plic.rs and trap.rs arrange for interrupts from VIRTIO0_IRQ
 }
 
-pub unsafe fn disk_rw(b: &Buf, writing: bool) {
+pub unsafe fn disk_rw(b: &mut Buf, writing: bool) {
     let sector: u64 = (b.blockno as u64) * (BSIZE as u64 / 512);
-
-    let mut _lock = DISK.lock.lock();
+    let p = CPU_MANAGER.my_proc();
+    let mut guard = DISK.lock.lock();
 
     // allocate three descriptors
     let mut idx: [usize; 3] = [0; 3];
@@ -89,8 +92,10 @@ pub unsafe fn disk_rw(b: &Buf, writing: bool) {
             Ok(_) => break,
             Err(_) => {}
         }
-        // no sleep
-        println!("virtio disk waiting desc..");
+        println!("disk_rw1 goint to sleep!"); // debug
+        p.sleep(&DISK.free[0] as *const _ as usize, guard);
+        guard = DISK.lock.lock();
+        println!("disk_rw1 wakeup!");         // debug
     }
 
     // format the three descriptors.
@@ -126,8 +131,8 @@ pub unsafe fn disk_rw(b: &Buf, writing: bool) {
     DISK.desc[idx[2]].next = 0;
 
     // record struct buf for virtio_disk_intr().
-    b.disk.set(true);
-    DISK.info[idx[0]].b = Some(mem::transmute::<*const _, *mut _>(b as *const Buf));
+    b.disk = true;
+    DISK.info[idx[0]].b = b as *mut Buf;
 
     // avail[0] is flags
     // avail[1] tells the device how far to look in avail[2...].
@@ -140,15 +145,17 @@ pub unsafe fn disk_rw(b: &Buf, writing: bool) {
     write(VIRTIO_MMIO_QUEUE_NOTIFY, 0); // queue 0
 
     // wait for virtio_disk_intr() to say request has finished.
-    while b.disk.get() {
-        println!("disk_rw goint to sleep!"); // debug
-        _lock = my_proc().sleep(b as *const _ as usize, &DISK.lock, _lock);
+    while b.disk {
+        println!("disk_rw2 goint to sleep!"); // debug
+        p.sleep(b as *const _ as usize, guard);
+        guard = DISK.lock.lock();
+        println!("disk_rw2 wakeup!");         // debug
     }
 
-    DISK.info[idx[0]].b = None;
+    DISK.info[idx[0]].b = ptr::null_mut();
     free_chain(idx[0]);
 
-    drop(_lock);
+    drop(guard);
 }
 
 // find a free descriptor, mark it non-free, return its index.
@@ -220,14 +227,12 @@ pub fn disk_intr() {
                 panic!("virtio_disk_intr status");
             }
 
-            match DISK.info[id].b {
-                Some(bp) => {
-                    (*bp).disk.set(false);
-                    crate::process::PROC_MANAGER.wakeup(bp as usize);
-                }
-                None => {
-                    panic!("disk_intr: disk's info buf is none");
-                }
+            if DISK.info[id].b.is_null() {
+                panic!("disk_intr: disk's info buf is none");
+            } else {
+                let bp = DISK.info[id].b;
+                (*bp).disk = false;
+                PROC_MANAGER.wakeup(bp as usize)
             }
 
             DISK.used_idx = (DISK.used_idx + 1) % NUM;
@@ -310,21 +315,30 @@ struct Disk {
     lock: SpinLock<()>,
 }
 
+const fn desc_new(_: usize) -> VRingDesc {
+    VRingDesc::new()
+}
+
+const fn info_new(_: usize) -> Info {
+    Info::new()
+}
+
 impl Disk {
     const fn new() -> Self {
         Self {
-            desc: [VRingDesc::new(); NUM],
+            desc: array_const_fn_init![desc_new; 8],    // 8 is NUM
             avail: [0; (PGSIZE - NUM * mem::size_of::<VRingDesc>()) / mem::size_of::<u16>()],
             used: UsedArea::new(),
             free: [true; NUM],
             used_idx: 0,
-            info: [Info::new(); NUM],
+            info: array_const_fn_init![info_new; 8],    // 8 is NUM
             lock: SpinLock::new((), "virtio_disk"),
         }
     }
 }
 
 #[repr(C)]
+#[derive(Clone, Copy)]
 struct VRingDesc {
     addr: u64,
     len: u32,
@@ -361,6 +375,7 @@ impl UsedArea {
 }
 
 #[repr(C)]
+#[derive(Clone, Copy)]
 struct VRingUsedElem {
     id: u32,
     len: u32,
@@ -381,12 +396,12 @@ struct VirtioBlkOutHdr {
 
 #[repr(C)]
 struct Info {
-    b: Option<*mut Buf>,
+    b: *mut Buf,
     status: u8,
 }
 
 impl Info {
     const fn new() -> Self {
-        Self { b: None, status: 0 }
+        Self { b: ptr::null_mut(), status: 0 }
     }
 }

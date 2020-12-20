@@ -1,4 +1,4 @@
-# xv6-riscv-rust
+# xv6-riscv-rust [TL;DR]
 This is a project intending to port xv6-riscv using Rust.  
 Most of major differences will be mentioned below,  
 while minor differences go to the document/comment in relevant source files.
@@ -108,6 +108,28 @@ so I choose to add a new type for trusted address, i.e.,
 ### sepc
 Saving `sepc`(user program counter) in trampoline.S instead of in user_trap.
 
+### RAII lock
+Several places deserve to mention:
+1. Since we apply RAII-style lock in Rust, so unlike C, some function like  
+    `sched` act transparently between the initialization and dropping of the lock/guard.
+2. `sleep` method in `Proc` struct receive a spinlock guard, instead of a spinlock,  
+    so the caller of this method should reacquire the spinlock if still needed.
+
+### ProcState
+`ALLOCATED`:  
+this state marks a runnable process is already allocated in a specific cpu,  
+in order to temporarily release the proc's lock when  
+`CpuManager::scheduler` calls `PROC_MANAGER.alloc_runnable`.
+
+<!-- ### allocate process
+`alloc_proc` in `ProcManager` is used to allocate a new process.  
+What is different from **xv6-riscv** is that:  
+it is passed in a `parent` parameter,  
+if `None` => used for the first process to init  
+if `Some` => used for existing process to `fork` a child  
+
+**Reason**: Due to In case the parent process is forking a new child process,   -->
+
 ## Path
 - [x] porting console and uart to support printf, p.s., smp = 1
 - [x] add register abstraction to support start using mret to return to rust_main
@@ -123,11 +145,18 @@ Saving `sepc`(user program counter) in trampoline.S instead of in user_trap.
 - [x] add user trap returner and way to user space
 - [x] add user code space(initcode) and ecall handing in `user_trap`
 - [x] add virtio disk driver, plic, buffer cache, inode
+- [x] refactor `Proc` into several parts, one need lock to protect, the other is private
 - [ ] complete sys_exec and add elf loader
 - [ ] complete a runnable fs
 
 ## TODO
-- [ ] `mul a0, a0, a1` is not an error
+- [ ] implement `Rc` in the kernel
+- [ ] To support `sleep` and `wakeup` in `sleeplock`:
+    separate `state` and `chan` from `Proc`
+- [ ] `ProcManager` should give out `&Proc` and
+    `Cpu` should keep `&Proc`, both utilize interior mutabilty
+- [ ] implement `Arc` for someting like `Bcache` and `Buf`
+
 
 ## Useful Reference
 [Why implementing Send trait for Mutex?](https://users.rust-lang.org/t/why-we-implement-send-trait-for-mutex/39065)  
@@ -137,6 +166,9 @@ Saving `sepc`(user program counter) in trampoline.S instead of in user_trap.
 [Unique issue](https://www.reddit.com/r/rust/comments/bcb0dh/replacement_for_stdptrunique_and_stdptrshared/)  
 [out of memory](https://www.reddit.com/r/rust/comments/279k7i/whats_rusts_mechanism_for_recovering_from_say/)  
 [integrate Mutex and MutexGuard](https://users.rust-lang.org/t/integrate-mutex-and-mutexguard-into-a-struct/43735)  
+[lld linker script](https://sourceware.org/binutils/docs/ld/Scripts.html)  
+[Rust Memory layout](https://docs.rust-embedded.org/embedonomicon/memory-layout.html)  
+[rustc codegen options](https://doc.rust-lang.org/rustc/codegen-options/index.html)  
 
 ## Story
 1. timerinit

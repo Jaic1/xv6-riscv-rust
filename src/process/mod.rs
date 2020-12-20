@@ -1,3 +1,5 @@
+use array_const_fn_init::array_const_fn_init;
+
 use core::convert::TryFrom;
 use core::ptr;
 
@@ -7,7 +9,8 @@ use crate::spinlock::SpinLock;
 use crate::trap::user_trap_ret;
 use crate::fs::{self, ROOTDEV};
 
-pub use cpu::{cpu_id, push_off, pop_off, my_cpu, my_proc};
+pub use cpu::{CPU_MANAGER, CpuManager};
+pub use cpu::{push_off, pop_off};
 
 mod context;
 mod proc;
@@ -33,15 +36,20 @@ pub struct ProcManager {
     pid: SpinLock<usize>,
 }
 
+const fn proc_new(_: usize) -> Proc {
+    Proc::new()
+}
+
 impl ProcManager {
     const fn new() -> Self {
         Self {
-            table: [Proc::new(); NPROC],
+            table: array_const_fn_init![proc_new; 64],       // 64 is NPROC
             init_proc: 0,
             pid: SpinLock::new(0, "nextpid"),
         }
     }
 
+    /// Only called once by the initial hart
     pub unsafe fn proc_init(&mut self) {
         for (pos, p) in self.table.iter_mut().enumerate() {
             // Allocate a page for the process's kernel stack.
@@ -55,7 +63,7 @@ impl ProcManager {
                 PGSIZE,
                 PteFlag::R | PteFlag::W,
             );
-            p.set_kstack(pa as usize);
+            p.data.get_mut().set_kstack(pa as usize);
         }
     }
 
@@ -72,66 +80,81 @@ impl ProcManager {
 
     /// Look in the process table for an UNUSED proc.
     /// If found, initialize state required to run in the kernel,
-    /// and return with p->lock held.
-    /// If there are no free procs, return 0.
+    /// and return with its ProcExcl held.
+    /// If there are no free procs, return None.
     fn alloc_proc(&mut self) ->
         Option<&mut Proc>
     {
-        for i in 0..self.table.len() {
-            let p = &mut self.table[i];
-            unsafe {p.lock.acquire_lock();}
-            match p.state {
+        let new_pid = self.alloc_pid();
+
+        for p in self.table.iter_mut() {
+            let mut guard = p.excl.lock();
+            match guard.state {
                 ProcState::UNUSED => {
-                    let pid = self.alloc_pid();
-                    let p = &mut self.table[i];
-                    p.pid = pid;
+                    // holding the process's excl lock,
+                    // so manager can modify its private data
+                    let pd = p.data.get_mut();
+
+                    // alloc trapframe
                     match unsafe { kalloc() } {
                         Some(ptr) => {
-                            p.set_tf(ptr as *mut TrapFrame);
+                            pd.set_tf(ptr as *mut TrapFrame);
                         },
                         None => {
-                            unsafe {p.lock.release_lock();}
+                            drop(guard);
                             return None
                         },
                     }
-                    p.proc_pagetable();
-                    p.init_context();
-                    return Some(&mut self.table[i])
+
+                    pd.proc_pagetable();
+                    pd.init_context();
+                    guard.pid = new_pid;
+                    guard.state = ProcState::ALLOCATED;
+
+                    drop(guard);
+                    return Some(p)
                 },
-                _ => {},
+                _ => {
+                    drop(guard);
+                },
             }
-            unsafe {p.lock.release_lock();}
         }
 
         None
     }
 
-    /// Look in the process table for an RUNNABLE proc.
+    /// Look in the process table for an RUNNABLE proc,
+    /// set its state to ALLOCATED and return without the proc's lock held.
     /// Typically used in each cpu's scheduler
     fn alloc_runnable(&mut self) ->
         Option<&mut Proc>
     {
-        for i in 0..self.table.len() {
-            unsafe {self.table[i].lock.acquire_lock();}
-            match self.table[i].state {
+        for p in self.table.iter_mut() {
+            let mut guard = p.excl.lock();
+            match guard.state {
                 ProcState::RUNNABLE => {
-                    return Some(&mut self.table[i])
+                    guard.state = ProcState::ALLOCATED;
+                    drop(guard);
+                    return Some(p)
                 },
-                _ => {},
+                _ => {
+                    drop(guard);
+                },
             }
-            unsafe {self.table[i].lock.release_lock();}
         }
 
         None
     }
 
     /// Set up first process
-    /// Only called once in rust_main(),
+    /// Only called once by the initial hart
     /// which can guarantee the init proc's index at table is 0
     pub unsafe fn user_init(&mut self) {
-        let p = self.alloc_proc().expect("user_init: all process should be unused");
+        let p = self.alloc_proc()
+            .expect("user_init: all process should be unused");
         p.user_init();
-        p.lock.release_lock();
+        let mut guard = p.excl.lock();
+        guard.state = ProcState::RUNNABLE;
     }
 
     /// Check if the given process is the init_proc 
@@ -141,13 +164,13 @@ impl ProcManager {
 
     /// Wake up all processes sleeping on chan.
     /// Must be called without any p->lock.
-    pub fn wakeup(&mut self, chan: usize) {
-        for p in self.table.iter_mut() {
-            let _lock = p.lock.lock();
-            if p.state == ProcState::SLEEPING && p.chan == chan {
-                p.state = ProcState::RUNNABLE;
+    pub fn wakeup(&self, channel: usize) {
+        for p in self.table.iter() {
+            let mut guard = p.excl.lock();
+            if guard.state == ProcState::SLEEPING && guard.channel == channel {
+                guard.state = ProcState::RUNNABLE;
             }
-            drop(_lock);
+            drop(guard);
         }
     }
 }
@@ -160,7 +183,7 @@ unsafe fn fork_ret() -> ! {
     static mut FIRST: bool = true;
     
     // Still holding p->lock from scheduler
-    my_cpu().release_proc();
+    CPU_MANAGER.my_proc().excl.unlock();
     
     if FIRST {
         // File system initialization

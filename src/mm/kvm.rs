@@ -105,7 +105,7 @@ pub unsafe fn kvm_pa(va: VirtAddr) -> u64 {
     match KERNEL_PAGE_TABLE.walk(va) {
         Some(pte) => {
             if !pte.is_valid() {
-                panic!("kvm_pa: va={:?} mapped pa not valid");
+                panic!("kvm_pa: va={:?} mapped pa not valid", va);
             }
             pte.as_phys_addr().as_usize() as u64 + off
         }

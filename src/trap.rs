@@ -2,8 +2,9 @@
 //! Mostly adopted from xv6-riscv
 
 use crate::consts::{TRAMPOLINE, TRAPFRAME, UART0_IRQ, VIRTIO0_IRQ};
-use crate::register::{stvec, sstatus, sepc, stval, sip, scause::{self, ScauseType}};
-use crate::process::{cpu_id, my_cpu};
+use crate::register::{stvec, sstatus, sepc, stval, sip,
+    scause::{self, ScauseType}};
+use crate::process::{CPU_MANAGER, CpuManager};
 use crate::spinlock::SpinLock;
 use crate::plic;
 use crate::driver::virtio;
@@ -27,7 +28,50 @@ pub unsafe extern fn user_trap() {
     extern "C" {fn kernelvec();}
     stvec::write(kernelvec as usize);
 
-    handle_trap(true);
+    let p = CPU_MANAGER.my_proc();
+
+    match scause::get_scause() {
+        ScauseType::IntSExt => {
+            // this is a supervisor external interrupt, via PLIC.
+
+            let irq = plic::claim();
+            if irq as usize == UART0_IRQ {
+                // TODO - uart intr
+                panic!("kerneltrap(): uart intr");
+            } else if irq as usize == VIRTIO0_IRQ {
+                virtio::disk_intr();
+            } else {
+                panic!("unexpected interrupt, irq={}", irq);
+            }
+
+            plic::complete(irq);
+        }
+        ScauseType::IntSSoft => {
+            // software interrupt from a machine-mode timer interrupt,
+            // forwarded by timervec in kernelvec.S.
+
+            // only cpu 0 inc ticks
+            if CpuManager::cpu_id() == 0 {
+                clock_intr();
+            }
+
+            // acknowledge the software interrupt
+            sip::clear_ssip();
+
+            // give up the cpu
+            p.check_abondon(-1);
+            p.yielding();
+        }
+        ScauseType::ExcUEcall => {
+            p.check_abondon(-1);
+            p.syscall();
+        }
+        ScauseType::Unknown => {
+            println!("scause {:#x}", scause::read());
+            println!("sepc={:#x} stval={:#x}", sepc::read(), stval::read());
+            p.abondon(-1);
+        }
+    }
 
     user_trap_ret();
 }
@@ -41,9 +85,11 @@ pub unsafe fn user_trap_ret() -> ! {
     // send interrupts and exceptions to uservec/trampoline in trampoline.S
     stvec::write(TRAMPOLINE.into());
 
-    // let the current cpu and process prepare for the sret
-    let c = my_cpu();
-    let satp = c.user_ret_prepare();
+    // let the current process prepare for the sret
+    let satp = {
+        let pd = &mut *CPU_MANAGER.my_proc().data.get();
+        pd.user_ret_prepare()
+    };
 
     // call userret with virtual address
     extern "C" {
@@ -59,36 +105,25 @@ pub unsafe fn user_trap_ret() -> ! {
 /// Used to handle kernel space's trap
 /// Being called from kernelvec
 #[no_mangle]
-pub fn kerneltrap() {
+pub unsafe fn kerneltrap() {
     let local_sepc = sepc::read();
     let local_sstatus = sstatus::read();
 
     if !sstatus::is_from_supervisor() {
-        panic!("kerneltrap: not from supervisor mode");
+        panic!("kerneltrap(): not from supervisor mode");
     }
     if sstatus::intr_get() {
-        panic!("kerneltrap: interrupts enabled");
+        panic!("kerneltrap(): interrupts enabled");
     }
 
-    handle_trap(false);
-
-    // the yield() may have caused some traps to occur,
-    // so restore trap registers for use by kernelvec.S's sepc instruction.
-    sepc::write(local_sepc);
-    sstatus::write(local_sstatus);
-}
-
-/// Check the type of trap, i.e., interrupt or exception
-/// under the supervisor mode
-/// it is from xv6-riscv's devintr()
-fn handle_trap(is_user: bool) {
     match scause::get_scause() {
         ScauseType::IntSExt => {
             // this is a supervisor external interrupt, via PLIC.
 
             let irq = plic::claim();
             if irq as usize == UART0_IRQ {
-                // uart intr
+                // TODO - uart intr
+                panic!("kerneltrap(): uart intr");
             } else if irq as usize == VIRTIO0_IRQ {
                 virtio::disk_intr();
             }
@@ -99,9 +134,8 @@ fn handle_trap(is_user: bool) {
             // software interrupt from a machine-mode timer interrupt,
             // forwarded by timervec in kernelvec.S.
 
-            let cid = unsafe {cpu_id()};
-
-            if cid == 0 {
+            // only cpu 0 inc ticks
+            if CpuManager::cpu_id() == 0 {
                 clock_intr();
             }
 
@@ -109,31 +143,22 @@ fn handle_trap(is_user: bool) {
             sip::clear_ssip();
 
             // give up the cpu
-            let c = unsafe {my_cpu()};
-            if is_user {
-                c.try_abondon(-1);
-            }
-            c.yielding();
+            CPU_MANAGER.my_cpu_mut().yield_proc();
         }
         ScauseType::ExcUEcall => {
-            if !is_user {
-                panic!("handler_trap: ecall from supervisor mode");
-            }
-
-            let c = unsafe {my_cpu()};
-            c.syscall();
+            panic!("kerneltrap(): ecall from supervisor mode");
         }
         ScauseType::Unknown => {
             println!("scause {:#x}", scause::read());
             println!("sepc={:#x} stval={:#x}", sepc::read(), stval::read());
-            if is_user {
-                let c = unsafe {my_cpu()};
-                c.abondon(-1);
-            } else {
-                panic!("handle_trap: unknown trap type");
-            }
+            panic!("kerneltrap(): unknown trap type");
         }
     }
+
+    // the yield() may have caused some traps to occur,
+    // so restore trap registers for use by kernelvec.S's sepc instruction.
+    sepc::write(local_sepc);
+    sstatus::write(local_sstatus);
 }
 
 static TICKS: SpinLock<usize> = SpinLock::new(0usize, "time");

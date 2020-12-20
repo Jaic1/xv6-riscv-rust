@@ -6,58 +6,31 @@ use core::cell::{Cell, UnsafeCell};
 use core::ops::{Deref, DerefMut, Drop};
 use core::sync::atomic::{fence, AtomicBool, Ordering};
 
-use crate::register::sstatus;
-use crate::process::{self, cpu_id};
+use crate::process::{CpuManager, pop_off, push_off};
 
 pub struct SpinLock<T: ?Sized> {
-    // for debugging
-    // None means this spinlock is not held by any cpu
-    //
-    // Option and isize are both ok here,
-    // but I use isize to get code written easier.
-    cpu_id: Cell<isize>,
-    name: &'static str,
-
     lock: AtomicBool,
+    name: &'static str,
+    cpuid: Cell<isize>,
     data: UnsafeCell<T>,
 }
 
-unsafe impl<T: ?Sized + Send> Sync for SpinLock<T> {}
+unsafe impl<T: ?Sized + Sync> Sync for SpinLock<T> {}
 // This is not needed for xv6-riscv's spinlock, while this is implemented both in crate std and spin.
-// unsafe impl<T: ?Sized + Send> Send for SpinLock<T> {}
+// unsafe impl<T: ?Sized + Sync> Send for SpinLock<T> {}
 
 impl<T> SpinLock<T> {
-    pub const fn new(user_data: T, name: &'static str) -> SpinLock<T> {
-        SpinLock {
-            cpu_id: Cell::new(-1),
-            name,
+    pub const fn new(data: T, name: &'static str) -> Self {
+        Self {
             lock: AtomicBool::new(false),
-            data: UnsafeCell::new(user_data),
+            name,
+            cpuid: Cell::new(-1),
+            data: UnsafeCell::new(data),
         }
     }
 }
 
 impl<T: ?Sized> SpinLock<T> {
-    pub unsafe fn holding(&self) -> bool {
-        let r: bool;
-        push_off();
-        r = self.lock.load(Ordering::Relaxed) && (self.cpu_id.get() == cpu_id() as isize);
-        pop_off();
-        r
-    }
-
-    /// Temporary solution for locking scheme across threads,
-    /// i.e., lock -> context switch -> unlock
-    pub unsafe fn acquire_lock(&self) {
-        push_off();
-        if self.holding() {
-            panic!("acquire");
-        }
-        while self.lock.compare_and_swap(false, true, Ordering::Acquire) {}
-        fence(Ordering::SeqCst);
-        self.cpu_id.set(cpu_id() as isize);
-    }
-
     /// Locks the spinlock and returns a guard.
     ///
     /// The returned guard can be deferenced for data access.
@@ -75,44 +48,48 @@ impl<T: ?Sized> SpinLock<T> {
     /// }
     /// ```
     pub fn lock(&self) -> SpinLockGuard<T> {
-        unsafe {self.acquire_lock();}
+        self.acquire();
         SpinLockGuard {
-            spin_lock: &self,
+            lock: &self,
             data: unsafe { &mut *self.data.get() },
         }
     }
 
-    pub unsafe fn release_lock(&self) {
-        if !self.holding() {
-            panic!("release");
+    /// Check whether this cpu is holding the lock.
+    /// Interrupts must be off,
+    /// because it call cpu_id()
+    unsafe fn holding(&self) -> bool {
+        self.lock.load(Ordering::Relaxed) && (self.cpuid.get() == CpuManager::cpu_id() as isize)
+    }
+
+    fn acquire(&self) {
+        push_off();
+        if unsafe { self.holding() } {
+            panic!("spinlock {} acquire", self.name);
         }
-        self.cpu_id.set(-1);
+        while self.lock.compare_and_swap(false, true, Ordering::Acquire) {}
+        fence(Ordering::SeqCst);
+        unsafe { self.cpuid.set(CpuManager::cpu_id() as isize) };
+    }
+
+    fn release(&self) {
+        if unsafe { !self.holding() } {
+            panic!("spinlock {} release", self.name);
+        }
+        self.cpuid.set(-1);
         fence(Ordering::SeqCst);
         self.lock.store(false, Ordering::Release);
         pop_off();
     }
-}
-
-/// push_off/pop_off are like intr_off()/intr_on() except that they are matched:
-/// it takes two pop_off()s to undo two push_off()s.  Also, if interrupts
-/// are initially off, then push_off, pop_off leaves them off.
-fn push_off() {
-    let old: bool = sstatus::intr_get();
-    sstatus::intr_off();
-    process::push_off(old);
-}
-
-fn pop_off() {
-    if sstatus::intr_get() {
-        panic!("spinlock.rs: pop_off - interruptable");
+    
+    /// A hole for fork_ret() to release a proc's excl lock
+    pub unsafe fn unlock(&self) {
+        self.release();
     }
-    // a little difference from xv6-riscv
-    // optional intr_on() moved to proc::pop_off()
-    process::pop_off();
 }
 
 pub struct SpinLockGuard<'a, T: ?Sized + 'a> {
-    spin_lock: &'a SpinLock<T>,
+    lock: &'a SpinLock<T>,
     data: &'a mut T,
 }
 
@@ -133,7 +110,15 @@ impl<'a, T: ?Sized> Drop for SpinLockGuard<'a, T> {
     /// The dropping of the SpinLockGuard will call spinlock's release_lock(),
     /// through its reference to its original spinlock.
     fn drop(&mut self) {
-        unsafe {self.spin_lock.release_lock();}
+        self.lock.release();
+    }
+}
+
+impl<'a, T> SpinLockGuard<'a, T> {
+    /// Test if the guard is held in the same CPU
+    /// Interrupts must be off
+    pub unsafe fn holding(&self) -> bool {
+        self.lock.holding()
     }
 }
 

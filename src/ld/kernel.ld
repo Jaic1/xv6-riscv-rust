@@ -8,16 +8,17 @@ SECTIONS
    * where qemu's -kernel jumps.
    */
   . = 0x80000000;
+
   .text :
   {
-    *(.text)
+    *(.text .text.*)
     . = ALIGN(0x1000);
     *(trampsec)
   }
 
   .rodata :
   {
-    *(.rodata)
+    *(.rodata .rodata.*)
   }
 
   . = ALIGN(0x1000);
@@ -27,11 +28,11 @@ SECTIONS
    * make sure end is after data and bss.
    */
   .data : {
-    *(.data)
+    *(.data .data.*)
   }
   .bss : {
-    *(.bss)
-    *(.sbss*)
+    *(.bss .bss.*)
+    *(.sbss* .sbss.*)
   }
   PROVIDE(end = .);
 }
