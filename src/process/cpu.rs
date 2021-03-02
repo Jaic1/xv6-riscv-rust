@@ -1,4 +1,4 @@
-use array_const_fn_init::array_const_fn_init;
+use array_macro::array;
 
 use core::ptr;
 
@@ -16,7 +16,7 @@ pub struct CpuManager {
 impl CpuManager {
     const fn new() -> Self {
         Self {
-            table: array_const_fn_init![cpu_new; 8]      // 8 is NCPU
+            table: array![_ => Cpu::new(); NCPU],
         }
     }
 
@@ -105,10 +105,6 @@ pub struct Cpu {
     scheduler: Context,
     noff: u8,
     intena: bool,
-}
-
-const fn cpu_new(_: usize) -> Cpu {
-    Cpu::new()
 }
 
 impl Cpu {

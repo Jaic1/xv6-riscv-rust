@@ -146,17 +146,16 @@ if `Some` => used for existing process to `fork` a child
 - [x] add user code space(initcode) and ecall handing in `user_trap`
 - [x] add virtio disk driver, plic, buffer cache, inode
 - [x] refactor `Proc` into several parts, one need lock to protect, the other is private
+- [x] separate `Buf` into two parts, one guarded by bcache's lock, the guarded by its own sleeplock
+- [x] update bcache and virtio disk
 - [ ] complete sys_exec and add elf loader
 - [ ] complete a runnable fs
 
 ## TODO
 - [ ] implement `Rc` in the kernel
-- [ ] To support `sleep` and `wakeup` in `sleeplock`:
-    separate `state` and `chan` from `Proc`
 - [ ] `ProcManager` should give out `&Proc` and
     `Cpu` should keep `&Proc`, both utilize interior mutabilty
 - [ ] implement `Arc` for someting like `Bcache` and `Buf`
-
 
 ## Useful Reference
 [Why implementing Send trait for Mutex?](https://users.rust-lang.org/t/why-we-implement-send-trait-for-mutex/39065)  

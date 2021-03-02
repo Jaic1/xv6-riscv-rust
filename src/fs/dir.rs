@@ -1,6 +1,6 @@
 use super::Inode;
 use super::{DIRSIZ, ROOTDEV, ROOTINO};
-use super::iget;
+use super::inode::iget;
 
 pub fn namei(path: &[u8]) -> &Inode {
     let mut name: [u8; DIRSIZ] = [0; DIRSIZ];

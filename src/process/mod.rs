@@ -1,4 +1,4 @@
-use array_const_fn_init::array_const_fn_init;
+use array_macro::array;
 
 use core::convert::TryFrom;
 use core::ptr;
@@ -36,14 +36,10 @@ pub struct ProcManager {
     pid: SpinLock<usize>,
 }
 
-const fn proc_new(_: usize) -> Proc {
-    Proc::new()
-}
-
 impl ProcManager {
     const fn new() -> Self {
         Self {
-            table: array_const_fn_init![proc_new; 64],       // 64 is NPROC
+            table: array![_ => Proc::new(); NPROC],
             init_proc: 0,
             pid: SpinLock::new(0, "nextpid"),
         }

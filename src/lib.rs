@@ -5,7 +5,9 @@
 #![feature(global_asm)]
 #![feature(ptr_internals)]
 #![feature(unsafe_cell_get_mut)]
+#![feature(const_fn_union)]
 #![allow(dead_code)]
+#![warn(rust_2018_idioms)]
 
 #[macro_use]
 extern crate bitflags;
@@ -28,7 +30,6 @@ mod rmain;
 mod spinlock;
 mod sleeplock;
 mod start;
-mod string;
 mod trap;
 mod driver;
 mod plic;

@@ -11,7 +11,7 @@ struct Frame {
     next: Option<NonNull<Frame>>,
 }
 
-unsafe impl Sync for Frame {}
+unsafe impl Send for Frame {}
 
 impl Frame {
     unsafe fn new(ptr: *mut u8) -> NonNull<Frame> {

@@ -1,8 +1,8 @@
 use core::sync::atomic::{AtomicBool, Ordering};
 
-use crate::driver::virtio::disk_init;
+use crate::driver::virtio_disk::DISK;
 use crate::register::tp;
-use crate::fs;
+use crate::fs::BCACHE;
 use crate::mm::{kinit, kvm_init, kvm_init_hart};
 use crate::plic;
 use crate::process::{PROC_MANAGER, CPU_MANAGER};
@@ -33,9 +33,9 @@ pub unsafe fn rust_main() -> ! {
         trap_init_hart(); // install kernel trap vector
         plic::init();
         plic::init_hart(cpuid);
-        fs::binit(); // buffer cache
-        disk_init(); // emulated hard disk
-        PROC_MANAGER.user_init(); // first user process
+        BCACHE.binit();             // buffer cache
+        DISK.lock().init();         // emulated hard disk
+        PROC_MANAGER.user_init();   // first user process
 
         STARTED.store(true, Ordering::SeqCst);
     } else {

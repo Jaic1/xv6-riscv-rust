@@ -6,10 +6,7 @@ mod dir;
 mod inode;
 
 pub use bio::Buf;
-pub use bio::binit;
-
-use bio::{bread, brelse};
-use inode::iget;
+pub use bio::BCACHE;
 
 // LTODO - just put all the consts relevant to fs to here tmp
 pub const BSIZE: usize = 1024;
@@ -107,13 +104,13 @@ impl SuperBlock {
 
 /// Read the super block
 fn read_super_block(dev: u32) {
-    let bp = bread(dev, 1);
+    let mut buf = BCACHE.bread(dev, 1);
     unsafe {
         ptr::copy(
-            bp.data.as_ptr() as *mut SuperBlock,
+            buf.raw_data() as *mut SuperBlock,
             &mut SB as *mut SuperBlock,
             1,
         );
     }
-    brelse(bp.dev, bp.blockno);
+    drop(buf);
 }

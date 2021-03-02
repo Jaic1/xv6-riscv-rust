@@ -1,137 +1,263 @@
 //! buffer cache layer
 
-use array_const_fn_init::array_const_fn_init;
+use array_macro::array;
 
-use core::ptr;
+use core::{ops::DerefMut, ptr};
+use core::sync::atomic::{Ordering, AtomicBool};
 
+use crate::sleeplock::{SleepLock, SleepLockGuard};
 use crate::spinlock::SpinLock;
-use crate::driver::virtio;
+use crate::driver::virtio_disk::DISK;
 use super::{NBUF, BSIZE};
 
-static BCACHE: SpinLock<Bcache> = SpinLock::new(Bcache::new(), "bcache");
+pub static BCACHE: Bcache = Bcache::new();
 
-struct Bcache {
-    bufs: [Buf; NBUF],
-    head: Buf,
+pub struct Bcache {
+    ctrl: SpinLock<BufLru>,
+    bufs: [BufInner; NBUF],
 }
 
-// Temp solve the problem that Buf is not Sync by default
+/// Raw pointers are automatically thread-unsafe.
+/// See https://doc.rust-lang.org/nomicon/send-and-sync.html.
 unsafe impl Sync for Bcache {}
 
 impl Bcache {
     const fn new() -> Self {
         Self {
-            bufs: array_const_fn_init![buf_new; 30],    // 30 is NBUF
-            head: Buf::new(),
+            ctrl: SpinLock::new(BufLru::new(), "BufLru"),
+            bufs: array![_ => BufInner::new(); NBUF],
         }
     }
-}
 
-/// Init the bcache.
-pub unsafe fn binit() {
-    // Create linked list of buffers
-    // BCACHE.head.prev = Some(&mut BCACHE.head as *mut Buf);
-    // BCACHE.head.next = Some(&mut BCACHE.head as *mut Buf);
-    // for b in BCACHE.bufs.iter_mut() {
-    //     b.next = BCACHE.head.next.clone();
-    //     b.prev = Some(&mut BCACHE.head as *mut Buf);
-    //     let ori_next = BCACHE.head.next.replace(b as *mut Buf).unwrap();
-    //     (*ori_next).prev = Some(b as *mut Buf);
-    // }
-    panic!("binit undone");
-}
+    /// Init the bcache.
+    /// Should only be called once when the kernel inits itself.
+    pub fn binit(&self) {
+        let mut ctrl = self.ctrl.lock();
+        let len = ctrl.inner.len();
 
-/// Look through buffer cache for block on device dev.
-/// If not found, allocate a buffer.
-/// In either case, return locked buffer.
-/// TODO - just loop the bufs to find empty(refcnt=0) buffer
-unsafe fn bget(_dev: u32, _blockno: u32) -> &'static mut Buf {
-    // let mut guard = BCACHE.lock();
+        // init the head and tail of the lru list
+        ctrl.head = &mut ctrl.inner[0];
+        ctrl.tail = &mut ctrl.inner[len-1];
 
-    // // find exist buffer first
-    // for b in guard.bufs.iter_mut() {
-    //     if b.refcnt > 0 && b.dev == dev && b.blockno == blockno {
-    //         b.refcnt += 1;
-    //         drop(guard);
-    //         return b
-    //     }
-    // }
-
-    // // find empty buffer then
-    // for b in guard.bufs.iter_mut() {
-    //     if b.refcnt == 0 {
-    //         b.refcnt += 1;
-    //         b.dev = dev;
-    //         b.blockno = blockno;
-    //         b.valid = false;
-    //         drop(guard);
-    //         return b
-    //     }
-    // }
-
-    // panic!("bget: could not find empty buffer")
-    panic!("bget undone");
-}
-
-
-pub fn bread(dev: u32, blockno: u32) -> &'static mut Buf {
-    let b = unsafe {bget(dev, blockno)};
-    if !b.valid {
-        unsafe {virtio::disk_rw(b, false)};
-        b.valid = true;
+        // init prev and next field
+        ctrl.inner[0].prev = ptr::null_mut();
+        ctrl.inner[0].next = &mut ctrl.inner[1];
+        ctrl.inner[len-1].prev = &mut ctrl.inner[len-2];
+        ctrl.inner[len-1].next = ptr::null_mut();
+        for i in 1..(len-1) {
+            ctrl.inner[i].prev = &mut ctrl.inner[i-1];
+            ctrl.inner[i].next = &mut ctrl.inner[i+1];
+        }
+        
+        // init index
+        ctrl.inner.iter_mut()
+            .enumerate()
+            .for_each(|(i, b)| b.index = i);
     }
-    b
-}
 
-/// Release a ~locked~ buffer
-/// ~Move to the head of the MRU list~
-pub fn brelse(dev: u32, blockno: u32) {
-    let mut guard = BCACHE.lock();
+    fn bget(&self, dev: u32, blockno: u32) -> Buf<'_> {
+        let mut ctrl = self.ctrl.lock();
 
-    // loop through the bcache bufs to
-    // find current buf to get its mut reference
-    let mut found: bool = false;
-    for b in guard.bufs.iter_mut() {
-        if b.dev == dev && b.blockno == blockno {
-            found = true;
-            b.refcnt -= 1;
-            break;
+        // find cached block
+        match ctrl.find_cached(dev, blockno) {
+            Some(index) => {
+                // found
+                drop(ctrl);
+                Buf {
+                    index,
+                    dev,
+                    blockno,
+                    data: Some(self.bufs[index].data.lock())
+                }
+            }
+            None => {
+                // not cached
+                // recycle the least recently used (LRU) unused buffer
+                match ctrl.recycle(dev, blockno) {
+                    Some(index) => {
+                        self.bufs[index].valid.store(false, Ordering::Relaxed);
+                        drop(ctrl);
+                        return Buf {
+                            index,
+                            dev,
+                            blockno,
+                            data: Some(self.bufs[index].data.lock()),
+                        }
+                    }
+                    None => panic!("no usable buffer")
+                }
+            }
         }
     }
-    
-    if !found {
-        panic!("brelse: not found buf(dev={}, blockno={})", dev, blockno);
+
+    /// Get the buf from the cache/disk
+    pub fn bread<'a>(&'a self, dev: u32, blockno: u32) -> Buf<'a> {
+        let mut b = self.bget(dev, blockno);
+        if !self.bufs[b.index].valid.load(Ordering::Relaxed) {
+            DISK.rw(&mut b, false);
+            self.bufs[b.index].valid.store(true, Ordering::Relaxed);
+        }
+        b
     }
-    drop(guard);
+
+    /// Move an unlocked buf to the head of the most-recently-used list.
+    fn brelse(&self, index: usize) {
+        self.ctrl.lock().move_if_no_ref(index);
+    }
 }
 
-/// TODO - may consider rc?
-pub struct Buf {
-    pub valid: bool,
-    pub disk: bool,
-    pub dev: u32,
-    pub blockno: u32,
-    pub refcnt: usize,
-    pub prev: *const Buf,     // TODO - 12/19 use smart pointers?
-    pub next: *const Buf,
-    pub data: [u8; BSIZE],
+/// A wrapper of raw buf data.
+pub struct Buf<'a> {
+    index: usize,
+    dev: u32,
+    blockno: u32,
+    /// Guaranteed to be Some during Buf's lifetime.
+    /// Introduced to let the sleeplock guard drop before the whole struct.
+    data: Option<SleepLockGuard<'a, BufData>>,
 }
 
-const fn buf_new(_: usize) -> Buf {
-    Buf::new()
+impl<'a> Buf<'a> {
+    pub fn read_blockno(&self) -> u32 {
+        self.blockno
+    }
+
+    pub fn bwrite(&mut self) {
+        DISK.rw(self, true);
+    }
+
+    /// Gives out a raw pointer at the buf data. 
+    pub fn raw_data(&mut self) -> *mut BufData {
+        let guard = self.data.as_mut().unwrap();
+        guard.deref_mut() as *mut _
+    }
 }
 
-impl Buf {
+impl<'a> Drop for Buf<'a> {
+    fn drop(&mut self) {
+        drop(self.data.take());
+        BCACHE.brelse(self.index);        
+    }
+}
+
+struct BufLru {
+    inner: [BufCtrl; NBUF],
+    head: *mut BufCtrl,
+    tail: *mut BufCtrl,
+}
+
+impl BufLru {
     const fn new() -> Self {
         Self {
-            valid: false,
-            disk: false,
+            inner: array![_ => BufCtrl::new(); NBUF],
+            head: ptr::null_mut(),
+            tail: ptr::null_mut(),
+        }
+    }
+
+    /// Find if the requested block is cached.
+    /// Return its index if found.
+    fn find_cached(&mut self, dev: u32, blockno: u32) -> Option<usize> {
+        let mut b = self.head;
+        while !b.is_null() {
+            let bref = unsafe { b.as_mut().unwrap() };
+            if bref.dev == dev && bref.blockno == blockno {
+                bref.refcnt += 1;
+                return Some(bref.index);
+            }
+            b = bref.next;
+        }
+        None
+    }
+
+    /// Recycle an unused buffer from the tail.
+    /// Return its index if found.
+    fn recycle(&mut self, dev: u32, blockno: u32) -> Option<usize> {
+        let mut b = self.tail;
+        while !b.is_null() {
+            let bref = unsafe { b.as_mut().unwrap() };
+            if bref.refcnt == 0 {
+                bref.dev = dev;
+                bref.blockno = blockno;
+                bref.refcnt += 1;
+                return Some(bref.index);
+            }
+            b = bref.prev;
+        }
+        None
+    }
+
+    /// Move an entry to the head if no live ref.
+    fn move_if_no_ref(&mut self, index: usize) {
+        let b = &mut self.inner[index];
+        b.refcnt -= 1;
+        if b.refcnt == 0 && !ptr::eq(self.head, b) {
+            // forward the tail if b is at the tail
+            // b may be the only entry in the lru list
+            if ptr::eq(self.tail, b) && !b.prev.is_null() {
+                self.tail = b.prev;
+            }
+            
+            // detach b
+            unsafe {
+                b.next.as_mut().map(|b_next| b_next.prev = b.prev);
+                b.prev.as_mut().map(|b_prev| b_prev.next = b.next);
+            }
+
+            // attach b
+            b.prev = ptr::null_mut();
+            b.next = self.head;
+            unsafe {
+                self.head.as_mut().map(|old_head| old_head.prev = b);
+            }
+            self.head = b;
+        }
+    }
+}
+
+struct BufCtrl {
+    dev: u32,
+    blockno: u32,
+    prev: *mut BufCtrl,
+    next: *mut BufCtrl,
+    refcnt: usize,
+    index: usize,
+}
+
+impl BufCtrl {
+    const fn new() -> Self {
+        Self {
             dev: 0,
             blockno: 0,
-            refcnt: 0,
             prev: ptr::null_mut(),
             next: ptr::null_mut(),
-            data: [0; BSIZE],
+            refcnt: 0,
+            index: 0,
         }
+    }
+}
+
+struct BufInner {
+    // valid is guarded by
+    // the bcache spinlock and the relevant buf sleeplock
+    // holding either of which can get access to them
+    valid: AtomicBool,
+    data: SleepLock<BufData>,
+}
+
+impl BufInner {
+    const fn new() -> Self {
+        Self {
+            valid: AtomicBool::new(false),
+            data: SleepLock::new(BufData::new(), "BufData"),
+        }
+    }
+}
+
+#[repr(C)]
+pub struct BufData([u8; BSIZE]);
+
+impl  BufData {
+    const fn new() -> Self {
+        Self([0; BSIZE])
     }
 }

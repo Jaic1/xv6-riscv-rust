@@ -141,12 +141,9 @@ impl ProcData {
 /// but in case when the process is mutating the ProcData,
 /// but then if it is interrupted and get killed, so it need to
 /// clean its ProcData, so UnsafeCell is better.
-/// 
-/// TODO - 12/19 get away from Clone and Copy
 pub struct Proc {
     pub excl: SpinLock<ProcExcl>,
     pub data: UnsafeCell<ProcData>,
-
     killed: bool,
 }
 
@@ -243,7 +240,7 @@ impl Proc {
     /// otherwise it will deadlock(because it acquires proc's lock first).
     /// Do not reacquires lock when awakened,
     /// so the caller must reacquire it if needed. 
-    pub fn sleep<T>(&self, channel: usize, guard: SpinLockGuard<T>) {
+    pub fn sleep<T>(&self, channel: usize, guard: SpinLockGuard<'_, T>) {
         // From xv6-riscv:
         // Must acquire p->lock in order to
         // change p->state and then call sched.

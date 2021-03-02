@@ -7,7 +7,7 @@ use crate::register::{stvec, sstatus, sepc, stval, sip,
 use crate::process::{CPU_MANAGER, CpuManager};
 use crate::spinlock::SpinLock;
 use crate::plic;
-use crate::driver::virtio;
+use crate::driver::virtio_disk::DISK;
 
 pub unsafe fn trap_init_hart() {
     extern "C" {
@@ -39,7 +39,7 @@ pub unsafe extern fn user_trap() {
                 // TODO - uart intr
                 panic!("kerneltrap(): uart intr");
             } else if irq as usize == VIRTIO0_IRQ {
-                virtio::disk_intr();
+                DISK.lock().intr();
             } else {
                 panic!("unexpected interrupt, irq={}", irq);
             }
@@ -125,7 +125,7 @@ pub unsafe fn kerneltrap() {
                 // TODO - uart intr
                 panic!("kerneltrap(): uart intr");
             } else if irq as usize == VIRTIO0_IRQ {
-                virtio::disk_intr();
+                DISK.lock().intr();
             }
 
             plic::complete(irq);

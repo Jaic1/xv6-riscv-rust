@@ -1,31 +1,27 @@
 //! sleeplock
 
 use core::ops::{Deref, DerefMut, Drop};
-use core::sync::atomic::{AtomicBool, fence, Ordering};
 use core::cell::{Cell, UnsafeCell};
 
-use crate::process::{push_off, pop_off};
-
-pub struct SleepChannel(u8);
+use crate::process::{CPU_MANAGER, PROC_MANAGER};
+use crate::spinlock::SpinLock;
 
 pub struct SleepLock<T: ?Sized> {
-    lock: AtomicBool,
+    lock: SpinLock<()>,
     locked: Cell<bool>,
-    chan: SleepChannel,
     name: &'static str,
     data: UnsafeCell<T>,
 }
 
-unsafe impl<T: ?Sized + Sync> Sync for SleepLock<T> {}
+unsafe impl<T: ?Sized + Send> Sync for SleepLock<T> {}
 // not needed
-// unsafe impl<T: ?Sized + Sync> Send for SleepLock<T> {}
+// unsafe impl<T: ?Sized + Send> Send for SleepLock<T> {}
 
 impl<T> SleepLock<T> {
     pub const fn new(data: T, name: &'static str) -> Self {
         Self {
-            lock: AtomicBool::new(false),
+            lock: SpinLock::new((), "sleeplock"),
             locked: Cell::new(false),
-            chan: SleepChannel(0),
             name,
             data: UnsafeCell::new(data),
         }
@@ -33,61 +29,39 @@ impl<T> SleepLock<T> {
 }
 
 impl<T: ?Sized> SleepLock<T> {
-    /// non-blocking, but might sleep if other p lock this sleeplock
-    pub fn lock(&self) -> SleepLockGuard<T> {
-        self.acquire();
+    /// blocking, might sleep if this sleeplock is already locked
+    pub fn lock(&self) -> SleepLockGuard<'_, T> {
+        let mut guard = self.lock.lock();
         while self.locked.get() {
-            self.sleep();
+            unsafe {
+                CPU_MANAGER.my_proc().sleep(self.locked.as_ptr() as usize, guard);
+            }
+            guard = self.lock.lock();
         }
         self.locked.set(true);
-        self.release();
+        drop(guard);
         SleepLockGuard {
             lock: &self,
             data: unsafe { &mut *self.data.get() }
         }
     }
 
-    fn sleep(&self) {
-        // TODO
-    }
-
     /// Called by its guard when dropped
     fn unlock(&self) {
-        self.acquire();
+        let guard = self.lock.lock();
         self.locked.set(false);
         self.wakeup();
-        self.release();
+        drop(guard);
     }
 
     fn wakeup(&self) {
-        // TODO
-    }
-
-    /// Always test holding might not be efficient
-    fn holding(&self) -> bool {
-        self.lock.load(Ordering::Relaxed)
-    }
-
-    fn acquire(&self) {
-        push_off();
-        if self.holding() {
-            panic!("sleeplock {} acquire", self.name);
+        unsafe {
+            PROC_MANAGER.wakeup(self.locked.as_ptr() as usize);
         }
-        while self.lock.compare_and_swap(false, true, Ordering::Acquire) {}
-        fence(Ordering::SeqCst);
-    }
-
-    fn release(&self) {
-        if !self.holding() {
-            panic!("sleeplock {} release", self.name);
-        }
-        fence(Ordering::SeqCst);
-        self.lock.store(false, Ordering::Release);
-        pop_off();
     }
 }
 
-pub struct SleepLockGuard<'a, T: ?Sized + 'a> {
+pub struct SleepLockGuard<'a, T: ?Sized> {
     lock: &'a SleepLock<T>,
     data: &'a mut T,
 }

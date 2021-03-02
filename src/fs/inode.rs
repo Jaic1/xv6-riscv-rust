@@ -1,9 +1,8 @@
 //! Inode-relevant operations
 
-use array_const_fn_init::array_const_fn_init;
+use array_macro::array;
 
 use crate::spinlock::SpinLock;
-
 use super::Inode;
 use super::NINODE;
 
@@ -14,15 +13,11 @@ struct Icache {
     inodes: [Inode; NINODE],
 }
 
-const fn inode_new(_: usize) -> Inode {
-    Inode::new()
-}
-
 impl Icache {
     const fn new() -> Self {
         Self {
             lock: SpinLock::new((), "icache"),
-            inodes: array_const_fn_init![inode_new; 50],    // 50 is NINODE
+            inodes: array![_ => Inode::new(); NINODE],
         }
     }
 }

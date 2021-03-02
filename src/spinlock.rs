@@ -15,9 +15,9 @@ pub struct SpinLock<T: ?Sized> {
     data: UnsafeCell<T>,
 }
 
-unsafe impl<T: ?Sized + Sync> Sync for SpinLock<T> {}
+unsafe impl<T: ?Sized + Send> Sync for SpinLock<T> {}
 // This is not needed for xv6-riscv's spinlock, while this is implemented both in crate std and spin.
-// unsafe impl<T: ?Sized + Sync> Send for SpinLock<T> {}
+// unsafe impl<T: ?Sized + Send> Send for SpinLock<T> {}
 
 impl<T> SpinLock<T> {
     pub const fn new(data: T, name: &'static str) -> Self {
@@ -47,7 +47,7 @@ impl<T: ?Sized> SpinLock<T> {
     ///     // i.e. the lock will be released
     /// }
     /// ```
-    pub fn lock(&self) -> SpinLockGuard<T> {
+    pub fn lock(&self) -> SpinLockGuard<'_, T> {
         self.acquire();
         SpinLockGuard {
             lock: &self,
@@ -88,7 +88,7 @@ impl<T: ?Sized> SpinLock<T> {
     }
 }
 
-pub struct SpinLockGuard<'a, T: ?Sized + 'a> {
+pub struct SpinLockGuard<'a, T: ?Sized> {
     lock: &'a SpinLock<T>,
     data: &'a mut T,
 }

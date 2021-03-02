@@ -38,7 +38,7 @@ static mut PR: Pr = Pr {
 ///
 /// note: it needs to be pub because it is used in macro_rules,
 ///     which access this fn from the crate-level
-pub fn _print(args: fmt::Arguments) {
+pub fn _print(args: fmt::Arguments<'_>) {
     use fmt::Write;
 
     unsafe {
@@ -69,7 +69,7 @@ macro_rules! println {
 }
 
 #[panic_handler]
-fn panic(info: &panic::PanicInfo) -> ! {
+fn panic(info: &panic::PanicInfo<'_>) -> ! {
     unsafe {
         PR.locking.store(false, Ordering::Relaxed);
     }
