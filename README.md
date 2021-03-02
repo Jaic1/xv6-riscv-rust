@@ -147,7 +147,7 @@ if `Some` => used for existing process to `fork` a child
 - [x] add virtio disk driver, plic, buffer cache, inode
 - [x] refactor `Proc` into several parts, one need lock to protect, the other is private
 - [x] separate `Buf` into two parts, one guarded by bcache's lock, the guarded by its own sleeplock
-- [x] update bcache and virtio disk
+- [x] update bio and virtio disk
 - [ ] complete sys_exec and add elf loader
 - [ ] complete a runnable fs
 
