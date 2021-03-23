@@ -3,7 +3,8 @@ use core::sync::atomic::{AtomicBool, Ordering};
 use crate::driver::virtio_disk::DISK;
 use crate::register::tp;
 use crate::fs::BCACHE;
-use crate::mm::{kinit, kvm_init, kvm_init_hart};
+use crate::mm::kalloc::KERNEL_HEAP;
+use crate::mm::{kvm_init, kvm_init_hart};
 use crate::plic;
 use crate::process::{PROC_MANAGER, CPU_MANAGER};
 use crate::trap::trap_init_hart;
@@ -26,7 +27,7 @@ pub unsafe fn rust_main() -> ! {
         println!();
         println!("xv6-riscv-rust is booting");
         println!();
-        kinit();
+        KERNEL_HEAP.kinit();
         kvm_init(); // init kernel page table
         PROC_MANAGER.proc_init(); // process table
         kvm_init_hart(); // trun on paging

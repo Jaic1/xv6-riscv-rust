@@ -1,12 +1,9 @@
+use alloc::boxed::Box;
 use core::convert::TryFrom;
 use core::ptr;
 
-use crate::consts::{PGSIZE, PGSHIFT, SATP_SV39, SV39FLAGLEN, USERTEXT};
-
-use super::Box;
-use super::kalloc;
-use super::PageAligned;
-use super::{Addr, PhysAddr, VirtAddr};
+use crate::consts::{PGSHIFT, PGSIZE, SATP_SV39, SV39FLAGLEN, USERTEXT};
+use super::{Addr, PhysAddr, VirtAddr, RawPage};
 
 bitflags! {
     pub struct PteFlag: usize {
@@ -73,8 +70,6 @@ pub struct PageTable {
     data: [PageTableEntry; 512],
 }
 
-impl PageAligned for PageTable {}
-
 impl PageTable {
     pub const fn empty() -> Self {
         Self {
@@ -83,11 +78,12 @@ impl PageTable {
     }
 
     /// clear all bits to zero, typically called after Box::new()
-    pub fn clear(&mut self) {
-        for pte in self.data.iter_mut() {
-            pte.write_zero();
-        }
-    }
+    /// TODO - remove
+    // pub fn clear(&mut self) {
+    //     for pte in self.data.iter_mut() {
+    //         pte.write_zero();
+    //     }
+    // }
 
     /// Convert the page table to be the usize
     /// that can be written in satp register
@@ -142,74 +138,55 @@ impl PageTable {
     /// if alloc is true then allocate new page table necessarily
     /// but doesn't change anything.(lazy allocation)
     fn walk_alloc(&mut self, va: VirtAddr) -> Option<&mut PageTableEntry> {
-        let mut page_table = self as *mut PageTable;
+        let mut pgt = self as *mut PageTable;
         for level in (1..=2).rev() {
-            let pte = unsafe { &mut (*page_table).data[va.page_num(level)] };
+            let pte = unsafe { &mut pgt.as_mut().unwrap().data[va.page_num(level)] };
 
             if pte.is_valid() {
-                page_table = pte.as_page_table();
+                pgt = pte.as_page_table();
             } else {
-                match Box::<PageTable>::new() {
-                    Some(mut new_page_table) => {
-                        new_page_table.clear();
-                        page_table = new_page_table.into_raw();
-                        pte.write(PhysAddr::try_from(page_table as usize).unwrap());
-                    }
-                    None => return None,
-                }
+                let zerod_pgt: Box<PageTable> = unsafe { Box::new_zeroed().assume_init() };
+                pgt = Box::into_raw(zerod_pgt);
+                pte.write(PhysAddr::try_from(pgt as usize).unwrap());
             }
         }
-        unsafe { Some(&mut (*page_table).data[va.page_num(0)]) }
+        unsafe { Some(&mut pgt.as_mut().unwrap().data[va.page_num(0)]) }
     }
 
     pub fn walk(&self, va: VirtAddr) -> Option<&PageTableEntry> {
-        let mut page_table = self as *const PageTable;
+        let mut pgt = self as *const PageTable;
         for level in (1..=2).rev() {
-            let pte = unsafe { &(*page_table).data[va.page_num(level)] };
+            let pte = unsafe { &pgt.as_ref().unwrap().data[va.page_num(level)] };
 
             if pte.is_valid() {
-                page_table = pte.as_page_table();
+                pgt = pte.as_page_table();
             } else {
                 return None
             }
         }
-        unsafe { Some(&(*page_table).data[va.page_num(0)]) }
+        unsafe { Some(&pgt.as_ref().unwrap().data[va.page_num(0)]) }
     }
 
-    /// Create a page table for a given process,
-    /// with no user pages, but with trampoline pages.
+    /// Create an empty page table for a given process.
     pub fn uvm_create() -> Box<PageTable> {
-        match Box::<PageTable>::new() {
-            Some(mut pagetable) => {
-                pagetable.clear();
-                pagetable
-            },
-            None => {
-                panic!("uvm_create: out of memory");
-            },
-        }
+        unsafe { Box::new_zeroed().assume_init() }
     }
 
     /// Load the initcode and map it into the pagetable
     /// Only used for the very first process
     pub fn uvm_init(&mut self, code: &[u8]) {
         if code.len() >= PGSIZE {
-            panic!("pagetable's uvm_init: initcode more than a page");
+            panic!("uvm_init: initcode more than a page");
         }
-        match unsafe{kalloc()} {
-            Some(mem) => {
-                unsafe {ptr::write_bytes(mem, 0, PGSIZE);}
-                self.map_pages(VirtAddr::from(USERTEXT), PGSIZE,
-                    PhysAddr::try_from(mem as usize).unwrap(),
-                    PteFlag::R | PteFlag::W | PteFlag::X | PteFlag::U)
-                    .expect("pagetable's uvm_init map_pages: ");
-                unsafe {ptr::copy_nonoverlapping(code.as_ptr(),
-                    mem, code.len());}
-            }
-            None => {
-                panic!("pagetable's uvm_init: not enough memory");
-            }
-        }
+ 
+        let mem = unsafe { RawPage::new_zeroed() as *mut u8 };
+        self.map_pages(
+            VirtAddr::from(USERTEXT),
+            PGSIZE,
+            PhysAddr::try_from(mem as usize).unwrap(),
+            PteFlag::R | PteFlag::W | PteFlag::X | PteFlag::U)
+            .expect("uvm_init: map_page error");
+        unsafe { ptr::copy_nonoverlapping(code.as_ptr(), mem, code.len()); }
     }
 
     /// Return the mapped physical address(page aligned)

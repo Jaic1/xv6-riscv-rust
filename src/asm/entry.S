@@ -8,10 +8,10 @@
 _entry:
 	# set up a stack for Rust.
     # stack0 is declared below,
-    # with a 4096-byte stack per CPU.
-    # sp = stack0 + (hartid * 4096)
+    # with a 8192-byte stack per CPU.
+    # sp = stack0 + (hartid * 8192)
     la sp, stack0
-    li a0, 1024*4
+    li a0, 1024*8
 	csrr a1, mhartid
     addi a1, a1, 1
     mul a0, a0, a1
@@ -24,4 +24,4 @@ junk:
     .section .data
     .align 4
 stack0:
-    .space 4096 * 8 # 8 is NCPU in param.rs
+    .space 8192 * 8 # 8 is NCPU in param.rs

@@ -17,10 +17,6 @@ pub struct Bcache {
     bufs: [BufInner; NBUF],
 }
 
-/// Raw pointers are automatically thread-unsafe.
-/// See https://doc.rust-lang.org/nomicon/send-and-sync.html.
-unsafe impl Sync for Bcache {}
-
 impl Bcache {
     const fn new() -> Self {
         Self {
@@ -144,6 +140,10 @@ struct BufLru {
     head: *mut BufCtrl,
     tail: *mut BufCtrl,
 }
+
+/// Raw pointers are automatically thread-unsafe.
+/// See https://doc.rust-lang.org/nomicon/send-and-sync.html.
+unsafe impl Send for BufLru {}
 
 impl BufLru {
     const fn new() -> Self {

@@ -58,7 +58,7 @@ impl TryFrom<usize> for PhysAddr {
         if addr % PGSIZE != 0 {
             return Err("PhysAddr addr not aligned");
         }
-        if addr > PHYSTOP.into() {
+        if addr > usize::from(PHYSTOP) {
             return Err("PhysAddr addr bigger than PHYSTOP");
         }
         Ok(PhysAddr(addr))

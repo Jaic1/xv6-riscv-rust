@@ -3,8 +3,8 @@ use array_macro::array;
 use core::convert::TryFrom;
 use core::ptr;
 
-use crate::consts::{NPROC, PGSIZE, TRAMPOLINE};
-use crate::mm::{kalloc, kvm_map, PhysAddr, PteFlag, VirtAddr};
+use crate::{consts::{NPROC, PGSIZE, TRAMPOLINE}};
+use crate::mm::{kvm_map, PhysAddr, PteFlag, VirtAddr, RawPage};
 use crate::spinlock::SpinLock;
 use crate::trap::user_trap_ret;
 use crate::fs::{self, ROOTDEV};
@@ -51,15 +51,15 @@ impl ProcManager {
             // Allocate a page for the process's kernel stack.
             // Map it high in memory, followed by an invalid
             // guard page.
-            let pa = kalloc().expect("no enough page for proc's kstack");
+            let pa = RawPage::new_zeroed();
             let va = kstack(pos);
             kvm_map(
                 VirtAddr::try_from(va).unwrap(),
-                PhysAddr::try_from(pa as usize).unwrap(),
+                PhysAddr::try_from(pa).unwrap(),
                 PGSIZE,
                 PteFlag::R | PteFlag::W,
             );
-            p.data.get_mut().set_kstack(pa as usize);
+            p.data.get_mut().set_kstack(pa);
         }
     }
 
@@ -92,15 +92,7 @@ impl ProcManager {
                     let pd = p.data.get_mut();
 
                     // alloc trapframe
-                    match unsafe { kalloc() } {
-                        Some(ptr) => {
-                            pd.set_tf(ptr as *mut TrapFrame);
-                        },
-                        None => {
-                            drop(guard);
-                            return None
-                        },
-                    }
+                    unsafe { pd.set_tf(RawPage::new_zeroed() as *mut TrapFrame); }
 
                     pd.proc_pagetable();
                     pd.init_context();
@@ -110,9 +102,7 @@ impl ProcManager {
                     drop(guard);
                     return Some(p)
                 },
-                _ => {
-                    drop(guard);
-                },
+                _ => drop(guard),
             }
         }
 

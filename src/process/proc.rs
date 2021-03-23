@@ -1,10 +1,11 @@
+use alloc::boxed::Box;
 use core::convert::TryFrom;
 use core::option::Option;
 use core::ptr;
 use core::cell::UnsafeCell;
 
 use crate::{consts::{PGSIZE, TRAMPOLINE, TRAPFRAME}, register::sstatus};
-use crate::mm::{Box, PageTable, PhysAddr, PteFlag, VirtAddr};
+use crate::mm::{PageTable, PhysAddr, PteFlag, VirtAddr};
 use crate::register::{satp, sepc};
 use crate::spinlock::{SpinLock, SpinLockGuard};
 use crate::trap::user_trap;

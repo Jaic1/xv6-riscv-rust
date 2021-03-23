@@ -19,3 +19,6 @@ pub const PGMASKLEN: usize = 9;
 /// for syscall
 pub const MAXPATH: usize = 128;
 pub const MAXARG: usize = 32;
+
+/// The smallest block size of the buddy system
+pub const LEAF_SIZE: usize = 16;

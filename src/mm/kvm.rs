@@ -1,11 +1,12 @@
 use core::convert::{TryFrom, Into};
+use core::mem;
 
 use crate::consts::{
     CLINT, CLINT_MAP_SIZE, KERNBASE, PHYSTOP, PLIC, PLIC_MAP_SIZE, UART0, UART0_MAP_SIZE, VIRTIO0,
     VIRTIO0_MAP_SIZE, TRAMPOLINE, PGSIZE
 };
-use crate::mm::{Addr, PageTable, PhysAddr, PteFlag, VirtAddr};
 use crate::register::satp;
+use super::{Addr, PageTable, PhysAddr, PteFlag, VirtAddr, RawPage};
 
 static mut KERNEL_PAGE_TABLE: PageTable = PageTable::empty();
 
@@ -15,6 +16,12 @@ pub unsafe fn kvm_init_hart() {
 }
 
 pub unsafe fn kvm_init() {
+    // check if RawPage and PageTable have the same mem layout
+    assert_eq!(mem::size_of::<RawPage>(), PGSIZE);
+    assert_eq!(mem::align_of::<RawPage>(), PGSIZE);
+    assert_eq!(mem::size_of::<RawPage>(), mem::size_of::<PageTable>());
+    assert_eq!(mem::align_of::<RawPage>(), mem::align_of::<PageTable>());
+
     // uart registers
     kvm_map(
         VirtAddr::from(UART0),
@@ -66,7 +73,7 @@ pub unsafe fn kvm_init() {
     kvm_map(
         VirtAddr::try_from(etext).unwrap(),
         PhysAddr::try_from(etext).unwrap(),
-        Into::<usize>::into(PHYSTOP) - etext,
+        usize::from(PHYSTOP) - etext,
         PteFlag::R | PteFlag::W,
     );
 

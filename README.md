@@ -136,7 +136,6 @@ if `Some` => used for existing process to `fork` a child
 - [x] cpu abstraction and spinlock, add unit_test feature as temp solution
 - [x] us spin e lock to synchronize con print sole's ln, and refactor PRINT
 - [x] add kernel frame allocator(kalloc), fix writing bug in `timerinit`
-- [ ] ~~buddy system allocator, slab~~
 - [x] use [Unique](https://doc.rust-lang.org/1.26.2/std/ptr/struct.Unique.html) in self-implemented Box to provide ownership, see [this](https://doc.rust-lang.org/nomicon/vec-layout.html) for example
 - [x] add Addr and PageTable
 - [x] add kvm for kernel, i.e., kernel paging
@@ -148,14 +147,17 @@ if `Some` => used for existing process to `fork` a child
 - [x] refactor `Proc` into several parts, one need lock to protect, the other is private
 - [x] separate `Buf` into two parts, one guarded by bcache's lock, the guarded by its own sleeplock
 - [x] update bio and virtio disk
+- [x] replace linked list allocator with buddy system
+- [ ] refresh some methods and variable name
 - [ ] complete sys_exec and add elf loader
 - [ ] complete a runnable fs
 
 ## TODO
-- [ ] implement `Rc` in the kernel
-- [ ] `ProcManager` should give out `&Proc` and
-    `Cpu` should keep `&Proc`, both utilize interior mutabilty
-- [ ] implement `Arc` for someting like `Bcache` and `Buf`
+- [ ] recycle pgt for uvm(no need to recycle pgt for kvm now)
+- [ ] remove ConstAddr and PhysAddr?
+- [ ] stack size need to be 8192 bytes?
+- [ ] meta data portion of buddy system is too high
+- [ ] may be too much UB
 
 ## Useful Reference
 [Why implementing Send trait for Mutex?](https://users.rust-lang.org/t/why-we-implement-send-trait-for-mutex/39065)  

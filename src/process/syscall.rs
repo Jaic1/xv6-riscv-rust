@@ -9,6 +9,7 @@ pub trait Syscall {
 
 impl Syscall for Proc {
     fn sys_exec(&mut self) -> usize {
+        // TODO - UB here
         let mut path: [u8; MAXPATH] = unsafe {
             mem::MaybeUninit::uninit().assume_init()
         };
