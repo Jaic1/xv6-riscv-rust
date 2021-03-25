@@ -3,11 +3,11 @@ use array_macro::array;
 use core::convert::TryFrom;
 use core::ptr;
 
-use crate::{consts::{NPROC, PGSIZE, TRAMPOLINE}};
+use crate::consts::{NPROC, PGSIZE, TRAMPOLINE, fs::ROOTDEV};
 use crate::mm::{kvm_map, PhysAddr, PteFlag, VirtAddr, RawPage};
 use crate::spinlock::SpinLock;
 use crate::trap::user_trap_ret;
-use crate::fs::{self, ROOTDEV};
+use crate::fs;
 
 pub use cpu::{CPU_MANAGER, CpuManager};
 pub use cpu::{push_off, pop_off};

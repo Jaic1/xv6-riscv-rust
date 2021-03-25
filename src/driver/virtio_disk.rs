@@ -1,4 +1,3 @@
-//! from xv6-riscv:
 //! driver for virtio device, only used for disk now
 //!
 //! from sec 2.6 in https://docs.oasis-open.org/virtio/virtio/v1.1/virtio-v1.1.pdf:
@@ -16,8 +15,8 @@ use core::sync::atomic::{fence, Ordering};
 use core::ptr;
 use core::convert::TryInto;
 
-use crate::consts::{PGSHIFT, PGSIZE, VIRTIO0};
-use crate::fs::{Buf, BSIZE};
+use crate::consts::{PGSHIFT, PGSIZE, VIRTIO0, fs::BSIZE};
+use crate::fs::Buf;
 use crate::spinlock::SpinLock;
 use crate::process::{PROC_MANAGER, CPU_MANAGER};
 

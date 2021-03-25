@@ -1,5 +1,6 @@
+use crate::consts::fs::{DIRSIZ, ROOTDEV, ROOTINO};
+
 use super::Inode;
-use super::{DIRSIZ, ROOTDEV, ROOTINO};
 use super::inode::iget;
 
 pub fn namei(path: &[u8]) -> &Inode {

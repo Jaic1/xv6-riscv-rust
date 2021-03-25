@@ -3,8 +3,8 @@
 use array_macro::array;
 
 use crate::spinlock::SpinLock;
+use crate::consts::fs::NINODE;
 use super::Inode;
-use super::NINODE;
 
 static mut ICACHE: Icache = Icache::new();
 

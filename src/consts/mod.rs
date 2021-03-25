@@ -5,6 +5,8 @@ pub use memlayout::*;
 pub use param::*;
 pub use riscv::*;
 
+pub mod fs;
+
 mod memlayout;
 mod param;
 mod riscv;

@@ -1,23 +1,14 @@
 use core::cell::Cell;
 use core::ptr;
 
+use crate::consts::fs::{NDIRECT, FSMAGIC};
+
 mod bio;
 mod dir;
 mod inode;
 
 pub use bio::Buf;
 pub use bio::BCACHE;
-
-// LTODO - just put all the consts relevant to fs to here tmp
-pub const BSIZE: usize = 1024;
-const NINODE: usize = 50;
-const NDIRECT: usize = 12;
-const DIRSIZ: usize = 14;
-const NBUF: usize = 30;
-
-pub const ROOTDEV: u32 = 1;
-const ROOTINO: u32 = 1;
-const FSMAGIC: u32 = 0x10203040;
 
 /// On-disk inode structure
 #[repr(C)]

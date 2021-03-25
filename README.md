@@ -147,7 +147,7 @@ if `Some` => used for existing process to `fork` a child
 - [x] refactor `Proc` into several parts, one need lock to protect, the other is private
 - [x] separate `Buf` into two parts, one guarded by bcache's lock, the guarded by its own sleeplock
 - [x] update bio and virtio disk
-- [x] replace linked list allocator with buddy system
+- [x] replace linked list allocator with buddy system, remove self-implemented Box
 - [ ] refresh some methods and variable name
 - [ ] complete sys_exec and add elf loader
 - [ ] complete a runnable fs
