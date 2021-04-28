@@ -1,3 +1,5 @@
+use array_macro::array;
+
 use alloc::boxed::Box;
 use core::convert::TryFrom;
 use core::ptr;
@@ -73,7 +75,7 @@ pub struct PageTable {
 impl PageTable {
     pub const fn empty() -> Self {
         Self {
-            data: [PageTableEntry { data: 0 }; 512],
+            data: array![_ => PageTableEntry { data: 0 }; 512],
         }
     }
 

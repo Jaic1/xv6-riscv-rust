@@ -1,11 +1,11 @@
 use core::cell::Cell;
-use core::ptr;
 
-use crate::consts::fs::{NDIRECT, FSMAGIC};
+use crate::consts::fs::NDIRECT;
 
-mod bio;
 mod dir;
 mod inode;
+mod bio;
+mod block;
 
 pub use bio::Buf;
 pub use bio::BCACHE;
@@ -54,54 +54,12 @@ impl Inode {
     }
 }
 
-/// Init fs
-pub fn init(dev: u32) {
-    read_super_block(dev);
-    if unsafe { SB.magic } != FSMAGIC {
-        panic!("fs::init: invalid file system");
-    }
-    println!("read file system super block..done");
+/// Init fs.
+/// Read super block info.
+/// Init log info and recover if necessary.
+pub unsafe fn init(dev: u32) {
+    block::init_super_block(dev);
+    // TODO - init log
+    println!("file system: setup done");
 }
 
-static mut SB: SuperBlock = SuperBlock::new();
-
-/// super block describes the disk layout
-#[repr(C)]
-struct SuperBlock {
-    magic: u32,      // Must be FSMAGIC
-    size: u32,       // Size of file system image (blocks)
-    nblocks: u32,    // Number of data blocks
-    ninodes: u32,    // Number of inodes.
-    nlog: u32,       // Number of log blocks
-    logstart: u32,   // Block number of first log block
-    inodestart: u32, // Block number of first inode block
-    bmapstart: u32,  // Block number of first free map block
-}
-
-impl SuperBlock {
-    const fn new() -> Self {
-        Self {
-            magic: 0,
-            size: 0,
-            nblocks: 0,
-            ninodes: 0,
-            nlog: 0,
-            logstart: 0,
-            inodestart: 0,
-            bmapstart: 0,
-        }
-    }
-}
-
-/// Read the super block
-fn read_super_block(dev: u32) {
-    let mut buf = BCACHE.bread(dev, 1);
-    unsafe {
-        ptr::copy(
-            buf.raw_data() as *mut SuperBlock,
-            &mut SB as *mut SuperBlock,
-            1,
-        );
-    }
-    drop(buf);
-}

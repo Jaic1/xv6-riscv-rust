@@ -67,7 +67,8 @@ impl<T: ?Sized> SpinLock<T> {
         if unsafe { self.holding() } {
             panic!("spinlock {} acquire", self.name);
         }
-        while self.lock.compare_and_swap(false, true, Ordering::Acquire) {}
+        while self.lock.compare_exchange(false, true,
+            Ordering::Acquire, Ordering::Acquire).is_err() {}
         fence(Ordering::SeqCst);
         unsafe { self.cpuid.set(CpuManager::cpu_id() as isize) };
     }

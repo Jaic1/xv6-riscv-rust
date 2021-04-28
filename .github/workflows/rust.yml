@@ -15,7 +15,7 @@ jobs:
     
     - uses: actions-rs/toolchain@v1
       with:
-        toolchain: nightly-2020-11-30
+        toolchain: nightly-2021-04-01
         default: true
         override: true
         components: rust-src, llvm-tools-preview

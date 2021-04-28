@@ -115,7 +115,7 @@ impl BuddySystem {
             info.free.init();
 
             // SAFETY: init the alloc field of size i
-            let alloc_size = round_up(nblk, 8);
+            let alloc_size = round_up(nblk, 8)/8;
             let alloc_slice_ptr = init_slice_empty(&mut cur, alloc_size);
             info.alloc.as_mut_ptr().write(alloc_slice_ptr);
         }
@@ -127,7 +127,7 @@ impl BuddySystem {
             let info = self.get_info_mut(i);
 
             // SAFETY: init the split field of size i
-            let split_size = round_up(nblk, 8);
+            let split_size = round_up(nblk, 8)/8;
             let split_slice_ptr = init_slice_empty(&mut cur, split_size);
             info.split.as_mut_ptr().write(split_slice_ptr);
         }

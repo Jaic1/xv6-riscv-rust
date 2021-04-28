@@ -27,7 +27,7 @@ cargo objdump --bin xv6-riscv-rust -- -d > kernel.asm
 
 // recommended, some instructions is unknown when using rust-objdump/llvm-objdump
 // in target/riscv64gc-unknown-none-elf/debug
-riscv64-unknown-elf-objdump -S xv6-rsicv > kernel.asm
+riscv64-unknown-elf-objdump -S xv6-riscv-rust > kernel.asm
 ```
 Unit Test:
 ```
@@ -148,7 +148,7 @@ if `Some` => used for existing process to `fork` a child
 - [x] separate `Buf` into two parts, one guarded by bcache's lock, the guarded by its own sleeplock
 - [x] update bio and virtio disk
 - [x] replace linked list allocator with buddy system, remove self-implemented Box
-- [ ] refresh some methods and variable name
+- [ ] add log layer in fs
 - [ ] complete sys_exec and add elf loader
 - [ ] complete a runnable fs
 
