@@ -1,7 +1,6 @@
 # xv6-riscv-rust [TL;DR]
 This is a project intending to port xv6-riscv using Rust.  
-Most of major differences will be mentioned below,  
-while minor differences go to the document/comment in relevant source files.
+Some major differences will be mentioned below.
 
 ## Note
 1. can only compile on target triple `riscv64gc-unknown-none-elf`,  
@@ -29,7 +28,11 @@ cargo objdump --bin xv6-riscv-rust -- -d > kernel.asm
 // in target/riscv64gc-unknown-none-elf/debug
 riscv64-unknown-elf-objdump -S xv6-riscv-rust > kernel.asm
 ```
-Unit Test:
+Verbose debug info:
+```
+cargo run --features "verbose_init_info"
+```
+Unit Test(deprecated):
 ```
 cargo run --features "unit_test"
 ```
@@ -121,14 +124,8 @@ this state marks a runnable process is already allocated in a specific cpu,
 in order to temporarily release the proc's lock when  
 `CpuManager::scheduler` calls `PROC_MANAGER.alloc_runnable`.
 
-<!-- ### allocate process
-`alloc_proc` in `ProcManager` is used to allocate a new process.  
-What is different from **xv6-riscv** is that:  
-it is passed in a `parent` parameter,  
-if `None` => used for the first process to init  
-if `Some` => used for existing process to `fork` a child  
-
-**Reason**: Due to In case the parent process is forking a new child process,   -->
+### Buddy System Allocator
+We have replaced the linked list allocator with buddy system allocator.
 
 ## Path
 - [x] porting console and uart to support printf, p.s., smp = 1
@@ -148,7 +145,7 @@ if `Some` => used for existing process to `fork` a child
 - [x] separate `Buf` into two parts, one guarded by bcache's lock, the guarded by its own sleeplock
 - [x] update bio and virtio disk
 - [x] replace linked list allocator with buddy system, remove self-implemented Box
-- [ ] add log layer in fs
+- [x] add log layer in fs
 - [ ] complete sys_exec and add elf loader
 - [ ] complete a runnable fs
 

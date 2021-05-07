@@ -91,6 +91,7 @@ pub unsafe fn kvm_init() {
 }
 
 pub unsafe fn kvm_map(va: VirtAddr, pa: PhysAddr, size: usize, perm: PteFlag) {
+    #[cfg(feature = "verbose_init_info")]
     println!(
         "kvm_map: va={:#x}, pa={:#x}, size={:#x}",
         va.as_usize(),

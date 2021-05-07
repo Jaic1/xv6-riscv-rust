@@ -2,7 +2,8 @@
 
 use array_macro::array;
 
-use core::{ops::DerefMut, ptr};
+use core::ptr;
+use core::ops::{Deref, DerefMut};
 use core::sync::atomic::{Ordering, AtomicBool};
 
 use crate::sleeplock::{SleepLock, SleepLockGuard};
@@ -56,13 +57,14 @@ impl Bcache {
 
         // find cached block
         match ctrl.find_cached(dev, blockno) {
-            Some(index) => {
+            Some((index, rc_ptr)) => {
                 // found
                 drop(ctrl);
                 Buf {
                     index,
                     dev,
                     blockno,
+                    rc_ptr,
                     data: Some(self.bufs[index].data.lock())
                 }
             }
@@ -70,13 +72,14 @@ impl Bcache {
                 // not cached
                 // recycle the least recently used (LRU) unused buffer
                 match ctrl.recycle(dev, blockno) {
-                    Some(index) => {
+                    Some((index, rc_ptr)) => {
                         self.bufs[index].valid.store(false, Ordering::Relaxed);
                         drop(ctrl);
                         return Buf {
                             index,
                             dev,
                             blockno,
+                            rc_ptr,
                             data: Some(self.bufs[index].data.lock()),
                         }
                     }
@@ -107,6 +110,7 @@ pub struct Buf<'a> {
     index: usize,
     dev: u32,
     blockno: u32,
+    rc_ptr: *mut usize,     // pointer to its refcnt in BufCtrl
     /// Guaranteed to be Some during Buf's lifetime.
     /// Introduced to let the sleeplock guard drop before the whole struct.
     data: Option<SleepLockGuard<'a, BufData>>,
@@ -121,10 +125,34 @@ impl<'a> Buf<'a> {
         DISK.rw(self, true);
     }
 
-    /// Gives out a raw pointer at the buf data. 
-    pub fn raw_data(&mut self) -> *mut BufData {
+    /// Gives out a raw const pointer at the buf data. 
+    pub fn raw_data(&self) -> *const BufData {
+        let guard = self.data.as_ref().unwrap();
+        guard.deref()
+    }
+
+    /// Gives out a raw mut pointer at the buf data. 
+    pub fn raw_data_mut(&mut self) -> *mut BufData {
         let guard = self.data.as_mut().unwrap();
-        guard.deref_mut() as *mut _
+        guard.deref_mut()
+    }
+
+    /// Pin the buf.
+    /// SAFETY: it should be definitly safe.
+    ///     Because the current refcnt >= 1, so the rc_ptr is valid.
+    pub unsafe fn pin(&self) {
+        let rc = *self.rc_ptr;
+        *self.rc_ptr = rc + 1;
+    }
+
+    /// Unpin the buf.
+    /// SAFETY: it should be called matching pin.
+    pub unsafe fn unpin(&self) {
+        let rc = *self.rc_ptr;
+        if rc <= 1 {
+            panic!("buf unpin not match");
+        }
+        *self.rc_ptr = rc - 1;
     }
 }
 
@@ -142,7 +170,7 @@ struct BufLru {
 }
 
 /// Raw pointers are automatically thread-unsafe.
-/// See https://doc.rust-lang.org/nomicon/send-and-sync.html.
+/// See doc https://doc.rust-lang.org/nomicon/send-and-sync.html.
 unsafe impl Send for BufLru {}
 
 impl BufLru {
@@ -155,14 +183,14 @@ impl BufLru {
     }
 
     /// Find if the requested block is cached.
-    /// Return its index if found.
-    fn find_cached(&mut self, dev: u32, blockno: u32) -> Option<usize> {
+    /// Return its index and incr the refcnt if found.
+    fn find_cached(&mut self, dev: u32, blockno: u32) -> Option<(usize, *mut usize)> {
         let mut b = self.head;
         while !b.is_null() {
             let bref = unsafe { b.as_mut().unwrap() };
             if bref.dev == dev && bref.blockno == blockno {
                 bref.refcnt += 1;
-                return Some(bref.index);
+                return Some((bref.index, &mut bref.refcnt));
             }
             b = bref.next;
         }
@@ -171,7 +199,7 @@ impl BufLru {
 
     /// Recycle an unused buffer from the tail.
     /// Return its index if found.
-    fn recycle(&mut self, dev: u32, blockno: u32) -> Option<usize> {
+    fn recycle(&mut self, dev: u32, blockno: u32) -> Option<(usize, *mut usize)> {
         let mut b = self.tail;
         while !b.is_null() {
             let bref = unsafe { b.as_mut().unwrap() };
@@ -179,7 +207,7 @@ impl BufLru {
                 bref.dev = dev;
                 bref.blockno = blockno;
                 bref.refcnt += 1;
-                return Some(bref.index);
+                return Some((bref.index, &mut bref.refcnt));
             }
             b = bref.prev;
         }
@@ -253,7 +281,9 @@ impl BufInner {
     }
 }
 
-#[repr(C)]
+/// Alignment of BufData should suffice for other structs
+/// that might converts from this struct.
+#[repr(C, align(8))]
 pub struct BufData([u8; BSIZE]);
 
 impl  BufData {

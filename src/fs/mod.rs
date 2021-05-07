@@ -1,14 +1,23 @@
+//! File system
+
 use core::cell::Cell;
+use core::ops::DerefMut;
 
 use crate::consts::fs::NDIRECT;
 
 mod dir;
 mod inode;
+mod log;
 mod bio;
-mod block;
+mod superblock;
 
 pub use bio::Buf;
 pub use bio::BCACHE;
+pub use log::LOG;
+
+use superblock::SUPER_BLOCK;
+use log::Log;
+use bio::BufData;
 
 /// On-disk inode structure
 #[repr(C)]
@@ -58,8 +67,9 @@ impl Inode {
 /// Read super block info.
 /// Init log info and recover if necessary.
 pub unsafe fn init(dev: u32) {
-    block::init_super_block(dev);
-    // TODO - init log
+    SUPER_BLOCK.init(dev);
+    let log_ptr = LOG.lock().deref_mut() as *mut Log;
+    log_ptr.as_mut().unwrap().init(dev);
     println!("file system: setup done");
 }
 

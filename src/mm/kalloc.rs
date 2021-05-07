@@ -1,4 +1,6 @@
 //! The kernel heap allocator
+//!
+//! reference: https://pdos.csail.mit.edu/6.828/2019/lec/malloc.c
 
 use bit_field::BitField;
 
@@ -82,7 +84,7 @@ impl BuddySystem {
     /// Note: It will align start and end to be page-aligned.
     unsafe fn init(&mut self, start: usize, end: usize) {
         if self.initialized {
-            panic!("buddy system: init twice");
+            panic!("  buddy system: init twice");
         }
 
         // make sure start and end are both page aligned
@@ -97,9 +99,9 @@ impl BuddySystem {
             self.nsizes += 1;
         }
 
-        println!("buddy system: useful memory is {:#x} bytes", self.actual_end - self.base);
-        println!("buddy system: leaf size is {} bytes", LEAF_SIZE);
-        println!("buddy system: free lists have {} different sizes", self.nsizes);
+        println!("  buddy system: useful memory is {:#x} bytes", self.actual_end - self.base);
+        println!("  buddy system: leaf size is {} bytes", LEAF_SIZE);
+        println!("  buddy system: free lists have {} different sizes", self.nsizes);
 
         // alloc buddy infos
         // SAFETY: init all of the BuddyInfo
@@ -147,7 +149,7 @@ impl BuddySystem {
 
         // check total memory
         if free != blk_size(self.max_size()) - meta - unavail {
-            panic!("buddy system: meta {}, free {}, unavail {}", meta, free, unavail);
+            panic!("  buddy system: meta {}, free {}, unavail {}", meta, free, unavail);
         }
 
         self.initialized = true;
@@ -161,7 +163,7 @@ impl BuddySystem {
 
         // only guarantee the alignment not bigger than page size
         if layout.align() > PGSIZE {
-            panic!("buddy system: request layout alignment({}) bigger than PGSIZE({})",
+            panic!("  buddy system: request layout alignment({}) bigger than PGSIZE({})",
                 layout.align(), PGSIZE);
         }
         // note: the size of a value is always a multiple of its alignment
@@ -220,7 +222,7 @@ impl BuddySystem {
         // check ptr in range [self.base, self.actual_end)
         let mut raw_addr = ptr as usize;
         if raw_addr < self.base || raw_addr >= self.actual_end {
-            panic!("buddy system: dealloc ptr out of range");
+            panic!("  buddy system: dealloc ptr out of range");
         }
 
         // find the size of block pointed by ptr
@@ -235,12 +237,12 @@ impl BuddySystem {
             }
         }
         if sizei == self.nsizes {
-            panic!("buddy system: dealloc cannot recycle ptr");
+            panic!("  buddy system: dealloc cannot recycle ptr");
         }
 
         // check layout
         if layout.size() > blk_size(sizei) {
-            panic!("buddy system: dealloc wrong layout {:?}", layout);
+            panic!("  buddy system: dealloc wrong layout {:?}", layout);
         }
 
         // free and coalesce
@@ -262,8 +264,9 @@ impl BuddySystem {
 
             // coalesce and continue
             sizei += 1;
+            let spliti = self.blk_index(sizei, raw_addr);
             let info = unsafe { self.get_info_mut(sizei) };
-            info.split_set(sizei, false);
+            info.split_set(spliti, false);
         }
 
         let info = unsafe { self.get_info_mut(sizei) };
@@ -274,7 +277,7 @@ impl BuddySystem {
     /// [self.base, cur)
     fn mark_meta(&mut self, cur: usize) -> usize {
         let meta = cur - self.base;
-        println!("buddy system: alloc {:#x} bytes meta data", meta);
+        println!("  buddy system: alloc {:#x} bytes meta data", meta);
         self.mark(self.base, cur);
         meta
     }
@@ -283,7 +286,7 @@ impl BuddySystem {
     /// that the size of buddy system should be a power of 2.
     fn mark_unavail(&mut self) -> usize {
         let unavail = blk_size(self.max_size()) - (self.actual_end - self.base);
-        println!("buddy system: {:#x} bytes unavailable", unavail);
+        println!("  buddy system: {:#x} bytes unavailable", unavail);
         self.mark(self.actual_end, self.actual_end + unavail);
         unavail
     }

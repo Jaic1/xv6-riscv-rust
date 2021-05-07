@@ -1,6 +1,6 @@
 //! driver for virtio device, only used for disk now
 //!
-//! from sec 2.6 in https://docs.oasis-open.org/virtio/virtio/v1.1/virtio-v1.1.pdf:
+//! from sec 2.6 in https://docs.oasis-open.org/virtio/virtio/v1.1/virtio-v1.1.pdf :
 //!     * Descriptor Table - occupies the Descriptor Area
 //!     * Available Ring - occupies the Driver Area
 //!     * Used Ring - occupies the Device Area
@@ -158,7 +158,7 @@ impl Disk {
         self.desc[i].next = 0;
         self.free[i] = true;
         unsafe {
-            PROC_MANAGER.wakeup(&self.free[0] as *const _ as usize);
+            PROC_MANAGER.wakeup(&self.free[0] as *const bool as usize);
         }
     }
 
@@ -167,7 +167,7 @@ impl Disk {
         loop {
             let flag = self.desc[i].flags;
             let next = self.desc[i].next;
-            self.free_desc(next as usize);
+            self.free_desc(i);
             if (flag & VRING_DESC_F_NEXT) != 0 {
                 i = next as usize;
             } else {
@@ -196,7 +196,7 @@ impl Disk {
                 panic!("interrupt status");
             }
 
-            let buf_raw_data = self.info[id].buf_channel.take()
+            let buf_raw_data = self.info[id].buf_channel.clone()
                 .expect("virtio disk intr handler not found pre-stored buf channel to wakeup");
             self.info[id].disk = false;
             unsafe { PROC_MANAGER.wakeup(buf_raw_data); }
@@ -210,7 +210,7 @@ impl SpinLock<Disk> {
     /// Read or write a certain Buf, which is returned after the op is done. 
     pub fn rw(&self, buf: &mut Buf<'_>, writing: bool) {
         let mut guard = self.lock();
-        let buf_raw_data = buf.raw_data();
+        let buf_raw_data = buf.raw_data_mut();
 
         let mut idx: [usize; 3] = [0; 3];
         loop {
@@ -218,7 +218,7 @@ impl SpinLock<Disk> {
                 break;
             } else {
                 unsafe {
-                    CPU_MANAGER.my_proc().sleep(&guard.free[0] as *const _ as usize, guard);
+                    CPU_MANAGER.my_proc().sleep(&guard.free[0] as *const bool as usize, guard);
                 }
                 guard = self.lock();
             }
@@ -273,6 +273,8 @@ impl SpinLock<Disk> {
             guard = self.lock();
         }
 
+        let buf_channel = guard.info[idx[0]].buf_channel.take();
+        debug_assert_eq!(buf_channel.unwrap(), buf_raw_data as usize);
         guard.free_chain(idx[0]);
 
         drop(guard);
