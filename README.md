@@ -146,6 +146,7 @@ We have replaced the linked list allocator with buddy system allocator.
 - [x] update bio and virtio disk
 - [x] replace linked list allocator with buddy system, remove self-implemented Box
 - [x] add log layer in fs
+- [ ] add inode layer in fs
 - [ ] complete sys_exec and add elf loader
 - [ ] complete a runnable fs
 
