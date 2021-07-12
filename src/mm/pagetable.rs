@@ -256,4 +256,78 @@ impl PageTable {
 
         Err("copy_in_str: dst not enough space")
     }
+
+    /// Copy content from src to the user's dst virtual address.
+    /// Copy `count` bytes in total.
+    pub fn copy_out(&mut self, mut src: *const u8, mut dst: usize, mut count: usize)
+        -> Result<(), ()>
+    {
+        if count == 0 {
+            return Ok(())
+        }
+
+        let mut va = VirtAddr::try_from(dst).unwrap();
+        va.pg_round_down();
+        loop {
+            let mut pa;
+            match self.walk_addr(va) {
+                Ok(phys_addr) => pa = phys_addr,
+                Err(s) => {
+                    println!("kernel warning: {} when pagetable copy_out", s);
+                    return Err(())
+                }
+            }
+            let off = dst - va.as_usize();
+            let off_from_end = PGSIZE - off;
+            let off = off as isize;
+            let dst_ptr = unsafe { pa.as_mut_ptr().offset(off) };
+            if off_from_end > count {
+                unsafe { ptr::copy(src, dst_ptr, count); }
+                return Ok(())
+            }
+            unsafe { ptr::copy(src, dst_ptr, off_from_end); }
+            count -= off_from_end;
+            src = unsafe { src.offset(off_from_end as isize) };
+            dst += off_from_end;
+            va.add_page();
+            debug_assert_eq!(dst, va.as_usize());
+        }
+    }
+
+    /// Copy content from user's src virtual address to dst.
+    /// Copy `count` bytes in total.
+    pub fn copy_in(&self, mut src: usize, mut dst: *mut u8, mut count: usize)
+        -> Result<(), ()>
+    {
+        if count == 0 {
+            return Ok(())
+        }
+
+        let mut va = VirtAddr::try_from(src).unwrap();
+        va.pg_round_down();
+        loop {
+            let pa;
+            match self.walk_addr(va) {
+                Ok(phys_addr) => pa = phys_addr,
+                Err(s) => {
+                    println!("kernel warning: {} when pagetable copy_in", s);
+                    return Err(())
+                }
+            }
+            let off = src - va.as_usize();
+            let off_from_end = PGSIZE - off;
+            let off = off as isize;
+            let src_ptr = unsafe { pa.as_ptr().offset(off) };
+            if off_from_end > count {
+                unsafe { ptr::copy(src_ptr, dst, count); }
+                return Ok(())
+            }
+            unsafe { ptr::copy(src_ptr, dst, off_from_end); }
+            count -= off_from_end;
+            src += off_from_end;
+            dst = unsafe { dst.offset(off_from_end as isize) };
+            va.add_page();
+            debug_assert_eq!(src, va.as_usize());
+        }
+    }
 }

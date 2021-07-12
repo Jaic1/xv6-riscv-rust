@@ -146,7 +146,7 @@ We have replaced the linked list allocator with buddy system allocator.
 - [x] update bio and virtio disk
 - [x] replace linked list allocator with buddy system, remove self-implemented Box
 - [x] add log layer in fs
-- [ ] add inode layer in fs
+- [x] add inode layer in fs
 - [ ] complete sys_exec and add elf loader
 - [ ] complete a runnable fs
 
@@ -156,6 +156,9 @@ We have replaced the linked list allocator with buddy system allocator.
 - [ ] stack size need to be 8192 bytes?
 - [ ] meta data portion of buddy system is too high
 - [ ] may be too much UB
+- [ ] one-time init, like Once
+- [ ] some assertions can switch to debug_assert, compile time assert
+- [ ] remove `VirtAddr` and `PhysAddr`
 
 ## Useful Reference
 [Why implementing Send trait for Mutex?](https://users.rust-lang.org/t/why-we-implement-send-trait-for-mutex/39065)  

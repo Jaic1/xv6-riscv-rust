@@ -12,10 +12,16 @@ pub const NDIRECT: usize = 12;
 /// number of indirect blocks in a single block
 /// note: the blockno should be u32
 pub const NINDIRECT: usize = BSIZE / core::mem::size_of::<u32>();
-pub const DIRSIZ: usize = 14;
+/// maxinum size of directory name, counting 0 in the end
+pub const DIRSIZE: usize = 14;
 
+/// root device number
 pub const ROOTDEV: u32 = 1;
-pub const ROOTINO: u32 = 1;
+/// root inode number in root device
+/// i.e., starting inode of the file tree structure
+pub const ROOTINUM: u32 = 1;
+/// root inode path name
+pub const ROOTIPATH: [u8; 2] = [b'/', 0];
 
 /// maxinum of blocks an FS op can write
 pub const MAXOPBLOCKS: usize = 10;

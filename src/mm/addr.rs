@@ -33,6 +33,11 @@ pub trait Addr {
     fn as_ptr(&self) -> *const u8 {
         *self.data_ref() as *const u8
     }
+
+    #[inline]
+    fn as_mut_ptr(&mut self) -> *mut u8 {
+        *self.data_mut() as *mut u8
+    }
 }
 
 #[repr(C)]

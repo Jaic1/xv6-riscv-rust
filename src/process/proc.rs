@@ -4,11 +4,12 @@ use core::option::Option;
 use core::ptr;
 use core::cell::UnsafeCell;
 
-use crate::{consts::{PGSIZE, TRAMPOLINE, TRAPFRAME}, register::sstatus};
+use crate::{consts::{PGSIZE, TRAMPOLINE, TRAPFRAME, fs::ROOTIPATH}, register::sstatus};
 use crate::mm::{PageTable, PhysAddr, PteFlag, VirtAddr};
 use crate::register::{satp, sepc};
 use crate::spinlock::{SpinLock, SpinLockGuard};
 use crate::trap::user_trap;
+use crate::fs::{Inode, ICACHE};
 
 use super::{CpuManager, syscall::Syscall};
 use super::PROC_MANAGER;
@@ -52,6 +53,8 @@ pub struct ProcData {
     tf: *mut TrapFrame,
     context: Context,
     name: [u8; 16],
+    /// current working directory
+    pub cwd: Option<Inode>,
 }
 
 impl ProcData {
@@ -63,6 +66,7 @@ impl ProcData {
             tf: ptr::null_mut(),
             context: Context::new(),
             name: [0; 16],
+            cwd: None,
         }
     }
 
@@ -134,6 +138,22 @@ impl ProcData {
 
         self.pagetable.as_ref().unwrap().as_satp()
     }
+
+    /// Copy content from src to the user's dst virtual address.
+    /// Copy `count` bytes in total.
+    /// It will redirect the call to pagetable.
+    #[inline]
+    pub fn copy_out(&mut self, src: *const u8, dst: usize, count: usize) -> Result<(), ()> {
+        self.pagetable.as_mut().unwrap().copy_out(src, dst, count)
+    }
+
+    /// Copy content from the user's src virtual address to dst.
+    /// Copy `count` bytes in total.
+    /// It will redirect the call to pagetable.
+    #[inline]
+    pub fn copy_in(&self, src: usize, dst: *mut u8, count: usize) -> Result<(), ()> {
+        self.pagetable.as_ref().unwrap().copy_in(src, dst, count)
+    }
 }
 
 /// Process Struct
@@ -181,7 +201,8 @@ impl Proc {
             );
         }
 
-        // TODO - p->cwd = namei("/");
+        debug_assert!(pd.cwd.is_none());
+        pd.cwd = Some(ICACHE.namei(&ROOTIPATH).expect("cannot find root inode by '/'"));
     }
 
     /// Exit the current process. No return.
@@ -268,7 +289,7 @@ impl Proc {
 }
 
 /// From syscall.rs
-/// TODO - subject to change
+/// LTODO - subject to change
 impl Proc {
     pub fn arg_raw(&self, n: usize) -> usize {
         let tf = unsafe { &mut *(*self.data.get()).tf };

@@ -137,7 +137,7 @@ impl ProcManager {
     /// which can guarantee the init proc's index at table is 0
     pub unsafe fn user_init(&mut self) {
         let p = self.alloc_proc()
-            .expect("user_init: all process should be unused");
+            .expect("all process should be unused");
         p.user_init();
         let mut guard = p.excl.lock();
         guard.state = ProcState::RUNNABLE;

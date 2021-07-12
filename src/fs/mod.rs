@@ -11,11 +11,12 @@ mod superblock;
 pub use bio::Buf;
 // TODO - could be reduced to use xxx after removing usage from rmain.rs
 pub use bio::BCACHE;
+pub use inode::{ICACHE, Inode};
 
 use superblock::SUPER_BLOCK;
 use log::{LOG, Log};
 use bio::BufData;
-use inode::{Inode, icheck};
+use inode::icheck;
 
 /// Init fs.
 /// Read super block info.

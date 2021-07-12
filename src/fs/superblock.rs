@@ -83,6 +83,12 @@ impl SuperBlock {
         let sb = self.read();
         (blockno / BPB) + sb.bmapstart
     }
+
+    /// The total count of blocks in the disk.
+    pub fn size(&self) -> u32 {
+        let sb = self.read();
+        sb.size
+    }
 }
 
 /// Raw super block describes the disk layout.

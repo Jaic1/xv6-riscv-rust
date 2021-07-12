@@ -1,9 +1,9 @@
-use crate::consts::fs::{DIRSIZ, ROOTDEV, ROOTINO};
+use crate::consts::fs::{DIRSIZE, ROOTDEV, ROOTINUM};
 use super::Inode;
 
 // TODO
 pub fn namei(path: &[u8]) -> &Inode {
-    let mut name: [u8; DIRSIZ] = [0; DIRSIZ];
+    let mut name: [u8; DIRSIZE] = [0; DIRSIZE];
     namex(path, false, &mut name)
 }
 
