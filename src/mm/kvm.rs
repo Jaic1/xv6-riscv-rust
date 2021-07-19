@@ -6,7 +6,7 @@ use crate::consts::{
     VIRTIO0_MAP_SIZE, TRAMPOLINE, PGSIZE
 };
 use crate::register::satp;
-use super::{Addr, PageTable, PhysAddr, PteFlag, VirtAddr, RawPage};
+use super::{Addr, PageTable, PhysAddr, PteFlag, VirtAddr, RawSinglePage, RawDoublePage, RawQuadPage};
 
 static mut KERNEL_PAGE_TABLE: PageTable = PageTable::empty();
 
@@ -16,11 +16,15 @@ pub unsafe fn kvm_init_hart() {
 }
 
 pub unsafe fn kvm_init() {
-    // check if RawPage and PageTable have the same mem layout
-    assert_eq!(mem::size_of::<RawPage>(), PGSIZE);
-    assert_eq!(mem::align_of::<RawPage>(), PGSIZE);
-    assert_eq!(mem::size_of::<RawPage>(), mem::size_of::<PageTable>());
-    assert_eq!(mem::align_of::<RawPage>(), mem::align_of::<PageTable>());
+    // check if RawPages and PageTable have the same mem layout
+    debug_assert_eq!(mem::size_of::<RawSinglePage>(), PGSIZE);
+    debug_assert_eq!(mem::align_of::<RawSinglePage>(), PGSIZE);
+    debug_assert_eq!(mem::size_of::<RawSinglePage>(), mem::size_of::<PageTable>());
+    debug_assert_eq!(mem::align_of::<RawSinglePage>(), mem::align_of::<PageTable>());
+    debug_assert_eq!(mem::size_of::<RawDoublePage>(), PGSIZE*2);
+    debug_assert_eq!(mem::align_of::<RawDoublePage>(), PGSIZE);
+    debug_assert_eq!(mem::size_of::<RawQuadPage>(), PGSIZE*4);
+    debug_assert_eq!(mem::align_of::<RawQuadPage>(), PGSIZE);
 
     // uart registers
     kvm_map(

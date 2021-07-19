@@ -1,6 +1,6 @@
 //! driver for virtio device, only used for disk now
 //!
-//! from sec 2.6 in https://docs.oasis-open.org/virtio/virtio/v1.1/virtio-v1.1.pdf :
+//! from sec 2.6 in https://docs.oasis-open.org/virtio/virtio/v1.1/virtio-v1.1.pdf:
 //!     * Descriptor Table - occupies the Descriptor Area
 //!     * Available Ring - occupies the Driver Area
 //!     * Used Ring - occupies the Device Area
@@ -136,15 +136,14 @@ impl Disk {
 
     /// Allocate one descriptor.
     fn alloc_desc(&mut self) -> Option<usize> {
-        self.free.iter_mut()
-            .enumerate()
-            .filter(|(_, f)| **f)
-            .take(1)
-            .map(|(i, f)| {
-                *f = false;
-                i
-            })
-            .next()
+        debug_assert_eq!(self.free.len(), NUM);
+        for i in 0..NUM {
+            if self.free[i] {
+                self.free[i] = false;
+                return Some(i)
+            }
+        }
+        None
     }
 
     /// Mark a descriptor as free.

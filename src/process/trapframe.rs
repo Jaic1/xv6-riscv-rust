@@ -1,4 +1,5 @@
 #[repr(C)]
+#[derive(Debug)]
 pub struct TrapFrame {
     /*   0 */ pub kernel_satp: usize,   // kernel page table
     /*   8 */ pub kernel_sp: usize,     // top of process's kernel stack

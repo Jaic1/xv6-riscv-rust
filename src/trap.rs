@@ -1,5 +1,4 @@
 //! Trap handler between user/kernel space and kernel space
-//! Mostly adopted from xv6-riscv
 
 use crate::consts::{TRAMPOLINE, TRAPFRAME, UART0_IRQ, VIRTIO0_IRQ};
 use crate::register::{stvec, sstatus, sepc, stval, sip,
@@ -87,7 +86,7 @@ pub unsafe fn user_trap_ret() -> ! {
 
     // let the current process prepare for the sret
     let satp = {
-        let pd = &mut *CPU_MANAGER.my_proc().data.get();
+        let pd = CPU_MANAGER.my_proc().data.get_mut();
         pd.user_ret_prepare()
     };
 

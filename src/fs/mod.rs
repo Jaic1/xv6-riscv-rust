@@ -1,6 +1,5 @@
 use core::ops::DerefMut;
 
-mod dir;
 mod inode;
 mod log;
 mod bio;
@@ -11,10 +10,11 @@ mod superblock;
 pub use bio::Buf;
 // TODO - could be reduced to use xxx after removing usage from rmain.rs
 pub use bio::BCACHE;
-pub use inode::{ICACHE, Inode};
+pub use inode::{ICACHE, Inode, InodeData};
+pub use log::LOG;
 
 use superblock::SUPER_BLOCK;
-use log::{LOG, Log};
+use log::Log;
 use bio::BufData;
 use inode::icheck;
 
@@ -30,5 +30,5 @@ pub unsafe fn init(dev: u32) {
     println!("file system: setup done");
 
     #[cfg(feature = "verbose_init_info")]
-    println!("file system: {} inode per block with size {}", IPB, BSIZE);
+    println!("file system: {} inode per block with size {}", inode::IPB, crate::consts::fs::BSIZE);
 }

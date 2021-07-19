@@ -20,3 +20,4 @@ array-macro = "=2.0.0"
 [features]
 unit_test = []
 verbose_init_info = []
+kernel_warning = []

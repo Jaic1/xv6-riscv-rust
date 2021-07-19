@@ -4,7 +4,7 @@ use core::convert::TryFrom;
 use core::ptr;
 
 use crate::consts::{NPROC, PGSIZE, TRAMPOLINE, fs::ROOTDEV};
-use crate::mm::{kvm_map, PhysAddr, PteFlag, VirtAddr, RawPage};
+use crate::mm::{kvm_map, PhysAddr, PteFlag, VirtAddr, RawPage, RawSinglePage, PageTable, RawQuadPage};
 use crate::spinlock::SpinLock;
 use crate::trap::user_trap_ret;
 use crate::fs;
@@ -16,8 +16,6 @@ mod context;
 mod proc;
 mod cpu;
 mod trapframe;
-mod syscall;
-mod elf;
 
 use context::Context;
 use proc::{Proc, ProcState};
@@ -51,15 +49,15 @@ impl ProcManager {
             // Allocate a page for the process's kernel stack.
             // Map it high in memory, followed by an invalid
             // guard page.
-            let pa = RawPage::new_zeroed();
+            let pa = RawQuadPage::new_zeroed() as usize;
             let va = kstack(pos);
             kvm_map(
                 VirtAddr::try_from(va).unwrap(),
                 PhysAddr::try_from(pa).unwrap(),
-                PGSIZE,
+                PGSIZE*4,
                 PteFlag::R | PteFlag::W,
             );
-            p.data.get_mut().set_kstack(pa);
+            p.data.get_mut().set_kstack(va);
         }
     }
 
@@ -92,9 +90,10 @@ impl ProcManager {
                     let pd = p.data.get_mut();
 
                     // alloc trapframe
-                    unsafe { pd.set_tf(RawPage::new_zeroed() as *mut TrapFrame); }
+                    pd.tf = unsafe { RawSinglePage::new_zeroed() as *mut TrapFrame };
 
-                    pd.proc_pagetable();
+                    debug_assert!(pd.pagetable.is_none());
+                    pd.pagetable = Some(PageTable::alloc_proc_pagetable(pd.tf as usize));
                     pd.init_context();
                     guard.pid = new_pid;
                     guard.state = ProcState::ALLOCATED;
@@ -132,9 +131,9 @@ impl ProcManager {
         None
     }
 
-    /// Set up first process
-    /// Only called once by the initial hart
-    /// which can guarantee the init proc's index at table is 0
+    /// Set up first process.
+    /// SAFETY: Only called once by the initial hart,
+    /// which can guarantee the init proc's index at table is 0.
     pub unsafe fn user_init(&mut self) {
         let p = self.alloc_proc()
             .expect("all process should be unused");
@@ -163,17 +162,21 @@ impl ProcManager {
 
 /// A fork child's very first scheduling by scheduler()
 /// will swtch to forkret.
-/// 
 /// Need to be handled carefully, because CPU use ra to jump here
+/// 
+/// SAFERT1: It should be called by the first user process alone,
+///         and then other user processes can call fork_ret concurrently.
+/// SAFETY2: It is an non-reentrant function.
+///         Interrupt/Exception handler must not call this function.
 unsafe fn fork_ret() -> ! {
-    static mut FIRST: bool = true;
+    static mut INITIALIZED: bool = false;
     
     // Still holding p->lock from scheduler
     CPU_MANAGER.my_proc().excl.unlock();
     
-    if FIRST {
+    if !INITIALIZED {
+        INITIALIZED = true;
         // File system initialization
-        FIRST = false;
         fs::init(ROOTDEV);
     }
 
@@ -182,5 +185,5 @@ unsafe fn fork_ret() -> ! {
 
 #[inline]
 fn kstack(pos: usize) -> usize {
-    Into::<usize>::into(TRAMPOLINE) - (pos + 1) * 2 * PGSIZE
+    Into::<usize>::into(TRAMPOLINE) - (pos + 1) * 5 * PGSIZE
 }

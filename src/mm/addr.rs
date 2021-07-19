@@ -41,7 +41,7 @@ pub trait Addr {
 }
 
 #[repr(C)]
-#[derive(Copy, Clone, Eq, PartialEq)]
+#[derive(Copy, Clone, Eq, PartialEq, Debug)]
 pub struct PhysAddr(usize);
 
 impl Addr for PhysAddr {
@@ -53,6 +53,21 @@ impl Addr for PhysAddr {
     #[inline]
     fn data_mut(&mut self) -> &mut usize {
         &mut self.0
+    }
+}
+
+impl PhysAddr {
+    /// Construct a [`PhysAddr`] from a trusted usize.
+    /// SAFETY: The caller should ensure that the raw usize is acutally a valid [`PhysAddr`].
+    #[inline]
+    pub unsafe fn from_raw(raw: usize) -> Self {
+        Self(raw)
+    }
+
+    /// Leak the [`PhysAddr`]'s inner address.
+    #[inline]
+    pub fn into_raw(self) -> usize {
+        self.0
     }
 }
 
@@ -101,6 +116,19 @@ impl Addr for VirtAddr {
 }
 
 impl VirtAddr {
+    /// Construct a [`VirtAddr`] from a trusted usize.
+    /// SAFETY: The caller should ensure that the raw usize is acutally a valid [`VirtAddr`].
+    #[inline]
+    pub unsafe fn from_raw(raw: usize) -> Self {
+        Self(raw)
+    }
+
+    /// Leak the [`VirtAddr`]'s inner address.
+    #[inline]
+    pub fn into_raw(self) -> usize {
+        self.0
+    }
+
     /// retrieve the vpn\[level\] of the virtual address
     /// only accepts level that is between 0 and 2
     #[inline]

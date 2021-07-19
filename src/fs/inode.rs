@@ -40,7 +40,6 @@ impl InodeCache {
                 guard[i].refs += 1;
                 return Inode { 
                     dev,
-                    blockno: guard[i].blockno,
                     inum,
                     index: i,
                 }
@@ -56,13 +55,10 @@ impl InodeCache {
             None => panic!("inode: not enough"),
         };
         guard[empty_i].dev = dev;
-        let blockno = unsafe { SUPER_BLOCK.locate_inode(inum) };
-        guard[empty_i].blockno = blockno;
         guard[empty_i].inum = inum;
         guard[empty_i].refs = 1;
         Inode {
             dev,
-            blockno,
             inum,
             index: empty_i
         }
@@ -74,7 +70,6 @@ impl InodeCache {
         guard[inode.index].refs += 1;
         Inode {
             dev: inode.dev,
-            blockno: inode.blockno,
             inum: inode.inum,
             index: inode.index,
         }
@@ -181,11 +176,11 @@ impl InodeCache {
     }
 }
 
-/// Skip the path starting at cur by '/'s.
+/// Skip the path starting at cur by b'/'s.
 /// It will copy the skipped content to name.
 /// Return the current offset after skipping.
 fn skip_path(path: &[u8], mut cur: usize, name: &mut [u8; DIRSIZE]) -> usize {
-    // skip preceding '/'
+    // skip preceding b'/'
     while path[cur] == b'/' {
         cur += 1;
     }
@@ -205,7 +200,7 @@ fn skip_path(path: &[u8], mut cur: usize, name: &mut [u8; DIRSIZE]) -> usize {
     unsafe { ptr::copy(path.as_ptr().offset(start as isize), name.as_mut_ptr(), count); }
     name[count] = 0;
 
-    // skip succeeding '/'
+    // skip succeeding b'/'
     while path[cur] == b'/' {
         cur += 1;
     }
@@ -214,9 +209,9 @@ fn skip_path(path: &[u8], mut cur: usize, name: &mut [u8; DIRSIZE]) -> usize {
 
 /// Inode handed out by inode cache.
 /// It is actually a handle pointing to the cache.
+#[derive(Debug)]
 pub struct Inode {
     dev: u32,
-    blockno: u32,
     inum: u32,
     index: usize,
 }
@@ -235,7 +230,7 @@ impl Inode {
 
         if !guard.valid {
             guard.dev = self.dev;
-            let buf = BCACHE.bread(self.dev, self.blockno);
+            let buf = BCACHE.bread(self.dev, unsafe { SUPER_BLOCK.locate_inode(self.inum) });
             let offset = locate_inode_offset(self.inum) as isize;
             let dinode = unsafe { (buf.raw_data() as *const DiskInode).offset(offset) };
             guard.dinode = unsafe { ptr::read(dinode) };
@@ -262,8 +257,6 @@ impl Drop for Inode {
 struct InodeMeta {
     /// device number
     dev: u32,
-    /// block number, calculated from inum
-    blockno: u32,
     /// inode number
     inum: u32,
     /// reference count
@@ -274,7 +267,6 @@ impl InodeMeta {
     const fn new() -> Self {
         Self {
             dev: 0,
-            blockno: 0,
             inum: 0,
             refs: 0,
         }
@@ -329,7 +321,7 @@ impl InodeData {
     /// Upate a modified in-memory inode to disk.
     /// Typically called after changing the content of inode info.
     pub fn update(&mut self, inode: &Inode) {
-        let mut buf = BCACHE.bread(inode.dev, inode.blockno);
+        let mut buf = BCACHE.bread(inode.dev, unsafe { SUPER_BLOCK.locate_inode(inode.inum) });
         let offset = locate_inode_offset(inode.inum) as isize;
         let dinode = unsafe { (buf.raw_data_mut() as *mut DiskInode).offset(offset) };
         unsafe { ptr::write(dinode, self.dinode) };
@@ -495,7 +487,7 @@ type BlockNo = u32;
 
 /// On-disk inode structure
 #[repr(C)]
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub struct DiskInode {
     /// File type.
     /// 0: empty, 1: file, 2: dir, 3: device 
@@ -526,11 +518,11 @@ impl DiskInode {
 }
 
 #[repr(u16)]
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
 enum InodeType {
     Empty = 0,
-    File = 1,
-    Directory = 2,
+    Directory = 1,
+    File = 2,
     Device = 3,
 }
 
@@ -548,66 +540,3 @@ impl DirEntry {
         }
     }
 }
-
-// static mut ICACHE: Icache = Icache::new();
-
-// struct Icache {
-//     lock: SpinLock<()>,
-//     inodes: [Inode; NINODE],
-// }
-
-// impl Icache {
-//     const fn new() -> Self {
-//         Self {
-//             lock: SpinLock::new((), "icache"),
-//             inodes: array![_ => Inode::new(); NINODE],
-//         }
-//     }
-// }
-
-// /// Find the inode with number inum on device dev
-// /// and return the in-memory copy. Does not lock
-// /// the inode and does not read it from disk.
-// pub fn iget(dev: u32, inum: u32) -> &'static Inode {
-//     let icache = unsafe {ICACHE.lock.lock()};
-
-//     // Is the inode we are looking for already cached?
-//     let mut empty: Option<&mut Inode> = None;
-//     for ip in unsafe {ICACHE.inodes.iter_mut()} {
-//         if ip.iref > 0 && ip.dev == dev && ip.inum == inum {
-//             ip.iref += 1;
-//             drop(icache);
-//             return ip;
-//         }
-//         if empty.is_none() && ip.iref == 0 {
-//             empty = Some(ip);
-//         }
-//     }
-
-//     // Recycle an inode cacahe entry
-//     if empty.is_none() {
-//         panic!("iget: no enough space in inode cache");
-//     }
-//     let ip: &mut Inode = empty.take().unwrap();
-//     ip.dev = dev;
-//     ip.inum = inum;
-//     ip.iref = 1;
-//     ip.valid = false;
-//     drop(icache);
-//     ip
-// }
-
-// /// Lock the given inode.
-// /// Reads the inode from disk if necessary.
-// /// LTODO - do not lock the inode yet, only process zero exists
-// pub fn ilock(ip: &mut Inode) {
-//     if ip.iref < 1 {
-//         panic!("ilock: iref smaller than 1");
-//     }
-
-//     // acquire sleep lock
-
-//     if !ip.valid {
-//         // bp = bread(ip.dev, )
-//     }
-// }

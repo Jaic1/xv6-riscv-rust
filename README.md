@@ -41,92 +41,6 @@ target spec:
 rustc -Z unstable-options --print target-spec-json --target riscv64gc-unknown-none-elf
 ```
 
-## Difference
-
-### SpinLock
-1. while xv6-riscv wraps spinlock into a single object,  
-    xv6-riscv-rust wrap a single object into a mutex, which implemented with spinlock.
-2. while xv6-riscv use `initlock` to init lock at run time,  
-    xv6-riscv-rust use const fn `SpinLock::new` to init lock at compile time.
-
-### AtomicBool for simple symbol
-xv6-riscv-rust use AtomicBool to replace simple int symbol in xv6-riscv,  
-in cases when these symbols are only written once or are rarely used.  
-Reason: safer, don't lose much speed.  
-
-1. `STARTED` in rmain.rs:  
-    It is written once by hart0 to tell other harts that some initialization done.
-2. `Pr.locking` in printf.rs:  
-    It is written once by the thread that panic.
-
-### amoswap and lr&sc
-GCC's `__sync_lock_test_and_set` generate `amoswap`,  
-while Rust's `compare_and_swap` / LLVM's `cmpxchg` generate `lr`&`sc`.  
-Helpful reference: [Rust Atomic compare and swap 2018 editionのRISC-Vソース〜LLVMを添えて〜](https://qiita.com/tomoyuki-nakabayashi/items/1ec7e075d4417c1a1fbe#dive-into-the-llvm-ir)
-
-### Unit Test
-xv6-riscv-rust use conditional compilation trick to implement some unit tests.  
-Test cases will go in submodule in several mods that is needed to be tested,  
-typically named `pub mod tests` in each mod.  
-Example:
-```
-#[cfg(feature = "unit_test")]
-pub mod tests {
-    use super::*;
-
-    /* test cases */
-}
-```
-With the feature unit_test enabled,  
-here is the execution flow: after each hart enter and execute `rust_main`,  
-they will call `test_main_entry`, which call each tests submodule.  
-Usage: add cargo options `--features "unit_test`
-
-### global_asm
-```
-global_asm!(include_str!("asm/entry.S"));
-global_asm!(include_str!("asm/kernelvec.S"));
-```
-xv6-riscv doesn't add `.section .text` in *kernelvec.S*(maybe GCC can infer that),  
-but it won't work for xv6-riscv-rust, so we have to explicitly add it.  
-You can try it by commenting `.section .text` out and then use objdump to see whether `timervec` exists.
-
-### linker script
-```
-   .bss : {
-     *(.bss)
-     *(.sbss*)
--     PROVIDE(end = .);     // works for ld, not for lld
-   }
-+  PROVIDE(end = .);        // works for lld
-```
-consider the codes in *kernel.ld* above, see the comments.
-
-### VirtAddr & PhysAddr
-when converting usize to VirtAddr & PhysAddr, use from or try_from?  
-seems like From and TryFrom can not be both implemented for <T, U>
-so I choose to add a new type for trusted address, i.e.,
-`impl From<ConstAddr> for VirtAddr` & `impl TryFrom<usize> for VirtAddr`(same for `PhysAddr`)
-
-### sepc
-Saving `sepc`(user program counter) in trampoline.S instead of in user_trap.
-
-### RAII lock
-Several places deserve to mention:
-1. Since we apply RAII-style lock in Rust, so unlike C, some function like  
-    `sched` act transparently between the initialization and dropping of the lock/guard.
-2. `sleep` method in `Proc` struct receive a spinlock guard, instead of a spinlock,  
-    so the caller of this method should reacquire the spinlock if still needed.
-
-### ProcState
-`ALLOCATED`:  
-this state marks a runnable process is already allocated in a specific cpu,  
-in order to temporarily release the proc's lock when  
-`CpuManager::scheduler` calls `PROC_MANAGER.alloc_runnable`.
-
-### Buddy System Allocator
-We have replaced the linked list allocator with buddy system allocator.
-
 ## Path
 - [x] porting console and uart to support printf, p.s., smp = 1
 - [x] add register abstraction to support start using mret to return to rust_main
@@ -147,7 +61,8 @@ We have replaced the linked list allocator with buddy system allocator.
 - [x] replace linked list allocator with buddy system, remove self-implemented Box
 - [x] add log layer in fs
 - [x] add inode layer in fs
-- [ ] complete sys_exec and add elf loader
+- [x] complete sys_exec and add elf loader
+- [ ] add sys_open, sys_read, sys_write
 - [ ] complete a runnable fs
 
 ## TODO
@@ -159,6 +74,9 @@ We have replaced the linked list allocator with buddy system allocator.
 - [ ] one-time init, like Once
 - [ ] some assertions can switch to debug_assert, compile time assert
 - [ ] remove `VirtAddr` and `PhysAddr`
+- [ ] refactor superblock
+- [ ] refactor `begin_op` and `end_op`
+- [ ] compare raw pointer's `get_mut` method with null-unchecked version `&mut *`
 
 ## Useful Reference
 [Why implementing Send trait for Mutex?](https://users.rust-lang.org/t/why-we-implement-send-trait-for-mutex/39065)  
@@ -171,11 +89,66 @@ We have replaced the linked list allocator with buddy system allocator.
 [lld linker script](https://sourceware.org/binutils/docs/ld/Scripts.html)  
 [Rust Memory layout](https://docs.rust-embedded.org/embedonomicon/memory-layout.html)  
 [rustc codegen options](https://doc.rust-lang.org/rustc/codegen-options/index.html)  
+[Consider deprecation of UB-happy static mut](https://github.com/rust-lang/rust/issues/53639)  
+[non-reentrant function](https://doc.bccnsoft.com/docs/rust-1.36.0-docs-html/embedded-book/start/exceptions.html)  
+[Cpp's Relaxed ordering](https://en.cppreference.com/w/cpp/atomic/memory_order#Relaxed_ordering)  
 
-## Story
+## Debug Story
 1. timerinit
 2. copy `sie`'s code to `sip`, then clearing `SSIP` becomes clearing `SSIE`,  
 which do not allow supervisor software interrupt forever.
 3. setting `stvec` the wrong address, supposed to be in virtual space,  
 but written as `uservec` directly, which is in physical space.
 4. be careful about `pc` when switching page table
+
+5. gdb's watchpoint is useful. For example, watch `$sp` to trace how the stack is used.
+
+First, I mistakenly set `kstack` to `pa`(should be `va`, in *proc_init fn*), which cause `kstack` conflicts with the heap,  
+more specifically, the heap memory holding a user's third-level pagetale.  
+And this pagetable map `trampoline`, so after the kernel taint the content through `kstack`, the user will cause *instruction fault* when it traps, because it will traps to `trampoline` first, but its instructions are tainted.
+
+Second, I increment the very-initial kernel stack from 4096 to 8192.
+
+Third, the previous kstack size is 4096 bytes, which is not enough for some Rust codes, especially in debug mode.  
+In `sys_exec`:
+```
+fn sys_exec(&mut self) -> SysResult {
+    let mut path: [u8; MAXPATH] = [0; MAXPATH];
+    if let Err(s) = self.arg_str(0, &mut path) {
+        syscall_warning(s);
+        return Err(())
+    }
+}
+```
+Assembly:
+```
+Disassembly of section .text._ZN81_$LT$rix..process..proc..Proc$u20$as$u20$rix..process..proc..syscall..Syscall$GT$8sys_exec17hb480b32dbb1dd6c4E:
+
+0000000080005138 <_ZN81_$LT$rix..process..proc..Proc$u20$as$u20$rix..process..proc..syscall..Syscall$GT$8sys_exec17hb480b32dbb1dd6c4E>:
+pub trait Syscall {
+    fn sys_exec(&mut self) -> SysResult;
+}
+
+impl Syscall for Proc {
+    fn sys_exec(&mut self) -> SysResult {
+    80005138:	81010113          	addi	sp,sp,-2032
+    8000513c:	7e113423          	sd	ra,2024(sp)
+    80005140:	6585                	lui	a1,0x1
+    80005142:	fc05859b          	addiw	a1,a1,-64
+    80005146:	40b10133          	sub	sp,sp,a1
+    8000514a:	fe2a                	sd	a0,312(sp)
+    8000514c:	6585                	lui	a1,0x1
+    8000514e:	3e85859b          	addiw	a1,a1,1000
+    80005152:	958a                	add	a1,a1,sp
+    80005154:	e188                	sd	a0,0(a1)
+    80005156:	0a88                	addi	a0,sp,336
+    80005158:	f62a                	sd	a0,296(sp)
+    8000515a:	4581                	li	a1,0
+    ......
+```
+Solution1: increase the kstack size to 8192/16384 bytes.  
+Solution2: look through the code, many times there are some code patterns that can make Rustc allocate too much stack space.  
+We can also dump the kernel code to asm to check which funtion use many stack space, for example, use `sp,sp,-[0-9]{4}` regular expression to search in vscode.  
+Solution3: switch to release mode, haha.  
+
+Finally, I choose the kernel stack size to be 4096B*4=16384B=16KB, which is temporarily enough for debug mode.

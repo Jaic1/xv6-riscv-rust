@@ -1,11 +1,11 @@
 use array_macro::array;
 
 use alloc::boxed::Box;
-use core::convert::TryFrom;
+use core::{cmp::min, convert::TryFrom};
 use core::ptr;
 
-use crate::consts::{PGSHIFT, PGSIZE, SATP_SV39, SV39FLAGLEN, USERTEXT};
-use super::{Addr, PhysAddr, VirtAddr, RawPage};
+use crate::consts::{PGSHIFT, PGSIZE, SATP_SV39, SV39FLAGLEN, USERTEXT, TRAMPOLINE, TRAPFRAME};
+use super::{Addr, PhysAddr, RawPage, RawSinglePage, VirtAddr, pg_round_up};
 
 bitflags! {
     pub struct PteFlag: usize {
@@ -26,6 +26,7 @@ bitflags! {
 /// because the lower 10-bits are used for flags.
 /// So we need to do extra non-trivial conversion between its data and Box<PageTable>.
 #[repr(C)]
+#[derive(Debug)]
 pub struct PageTableEntry {
     data: usize,
 }
@@ -37,8 +38,19 @@ impl PageTableEntry {
     }
 
     #[inline]
+    fn is_leaf(&self) -> bool {
+        let flag_bits = self.data & (PteFlag::R|PteFlag::W|PteFlag::X).bits();
+        !(flag_bits == 0)
+    }
+
+    #[inline]
     fn is_user(&self) -> bool {
         (self.data & (PteFlag::U.bits())) > 0
+    }
+
+    #[inline]
+    fn clear_user(&mut self) {
+        self.data &= !PteFlag::U.bits()
     }
 
     #[inline]
@@ -48,7 +60,7 @@ impl PageTableEntry {
 
     #[inline]
     pub fn as_phys_addr(&self) -> PhysAddr {
-        PhysAddr::try_from((self.data >> SV39FLAGLEN) << PGSHIFT).unwrap()
+        unsafe { PhysAddr::from_raw((self.data >> SV39FLAGLEN) << PGSHIFT) }
     }
 
     #[inline]
@@ -65,6 +77,18 @@ impl PageTableEntry {
     fn write_perm(&mut self, pa: PhysAddr, perm: PteFlag) {
         self.data = ((pa.as_usize() >> PGSHIFT) << SV39FLAGLEN) | (perm | PteFlag::V).bits()
     }
+
+    /// If this pte points to a pagetable, free it. 
+    fn free(&mut self) {
+        if self.is_valid() {
+            if !self.is_leaf() {
+                drop(unsafe { Box::from_raw(self.as_page_table()) });
+                self.data = 0;
+            } else {
+                panic!("freeing a pte leaf")
+            }
+        }
+    }
 }
 
 #[repr(C, align(4096))]
@@ -79,18 +103,10 @@ impl PageTable {
         }
     }
 
-    /// clear all bits to zero, typically called after Box::new()
-    /// TODO - remove
-    // pub fn clear(&mut self) {
-    //     for pte in self.data.iter_mut() {
-    //         pte.write_zero();
-    //     }
-    // }
-
     /// Convert the page table to be the usize
     /// that can be written in satp register
     pub fn as_satp(&self) -> usize {
-        SATP_SV39 | ((self.data.as_ptr() as usize) >> PGSHIFT)
+        SATP_SV39 | ((self as *const PageTable as usize) >> PGSHIFT)
     }
 
     /// Create PTEs for virtual addresses starting at va that refer to
@@ -136,9 +152,8 @@ impl PageTable {
 
     /// Return the bottom level of PTE that corresponds to the given va.
     /// i.e. this PTE contains the pa that is mapped for the given va.
-    ///
-    /// if alloc is true then allocate new page table necessarily
-    /// but doesn't change anything.(lazy allocation)
+    /// Allocate new page table necessarily
+    /// but doesn't change anything yet.(lazy allocation)
     fn walk_alloc(&mut self, va: VirtAddr) -> Option<&mut PageTableEntry> {
         let mut pgt = self as *mut PageTable;
         for level in (1..=2).rev() {
@@ -155,6 +170,22 @@ impl PageTable {
         unsafe { Some(&mut pgt.as_mut().unwrap().data[va.page_num(0)]) }
     }
 
+    /// Same as [`walk_alloc`], except that it does not alloc new pagetable if not present.
+    fn walk_mut(&mut self, va: VirtAddr) -> Option<&mut PageTableEntry> {
+        let mut pgt = self as *mut PageTable;
+        for level in (1..=2).rev() {
+            let pte = unsafe { &mut pgt.as_mut().unwrap().data[va.page_num(level)] };
+
+            if pte.is_valid() {
+                pgt = pte.as_page_table();
+            } else {
+                return None
+            }
+        }
+        unsafe { Some(&mut pgt.as_mut().unwrap().data[va.page_num(0)]) }
+    }
+
+    // Same as [`walk_mut`], except that it gives out non-mutable reference to pte.
     pub fn walk(&self, va: VirtAddr) -> Option<&PageTableEntry> {
         let mut pgt = self as *const PageTable;
         for level in (1..=2).rev() {
@@ -169,31 +200,30 @@ impl PageTable {
         unsafe { Some(&pgt.as_ref().unwrap().data[va.page_num(0)]) }
     }
 
-    /// Create an empty page table for a given process.
-    pub fn uvm_create() -> Box<PageTable> {
-        unsafe { Box::new_zeroed().assume_init() }
-    }
-
-    /// Load the initcode and map it into the pagetable
-    /// Only used for the very first process
-    pub fn uvm_init(&mut self, code: &[u8]) {
-        if code.len() >= PGSIZE {
-            panic!("uvm_init: initcode more than a page");
+    /// Same as [`walk_addr`], except that it gives out a physical address
+    /// that the data it points to can be mutated.
+    pub fn walk_addr_mut(&mut self, va: VirtAddr)
+        -> Result<PhysAddr, &'static str>
+    {
+        match self.walk_mut(va) {
+            Some(pte) => {
+                if !pte.is_valid() {
+                    Err("pte not valid")
+                } else if !pte.is_user() {
+                    Err("pte not mapped for user")
+                } else {
+                    Ok(pte.as_phys_addr())
+                }
+            }
+            None => {
+                Err("va not mapped")
+            }
         }
- 
-        let mem = unsafe { RawPage::new_zeroed() as *mut u8 };
-        self.map_pages(
-            VirtAddr::from(USERTEXT),
-            PGSIZE,
-            PhysAddr::try_from(mem as usize).unwrap(),
-            PteFlag::R | PteFlag::W | PteFlag::X | PteFlag::U)
-            .expect("uvm_init: map_page error");
-        unsafe { ptr::copy_nonoverlapping(code.as_ptr(), mem, code.len()); }
     }
 
-    /// Return the mapped physical address(page aligned)
-    /// va need not be page aligned
-    fn walk_addr(&self, va: VirtAddr)
+    /// Return the mapped physical address(page aligned).
+    /// Note: `va` need not be page aligned.
+    pub fn walk_addr(&self, va: VirtAddr)
         -> Result<PhysAddr, &'static str>
     {
         match self.walk(va) {
@@ -212,7 +242,159 @@ impl PageTable {
         }
     }
 
-    /// Copy null-terminated string from virtual address starting at srcva,
+    /// Create an empty page table for a given process.
+    /// This will panic if there is not enough heap for a new pagetable.
+    fn uvm_create() -> Box<Self> {
+        unsafe { Box::new_zeroed().assume_init() }
+    }
+
+    /// Allocate a new user pagetable.
+    /// Map trampoline code and trapframe.
+    pub fn alloc_proc_pagetable(trapframe: usize) -> Box<Self> {
+        extern "C" {
+            fn trampoline();
+        }
+
+        let mut pagetable = Self::uvm_create();
+        pagetable
+            .map_pages(
+                VirtAddr::from(TRAMPOLINE),
+                PGSIZE,
+                PhysAddr::try_from(trampoline as usize).unwrap(),
+                PteFlag::R | PteFlag::X,
+            )
+            .expect("user proc table mapping trampoline");
+        pagetable
+            .map_pages(
+                VirtAddr::from(TRAPFRAME),
+                PGSIZE,
+                PhysAddr::try_from(trapframe).unwrap(),
+                PteFlag::R | PteFlag::W,
+            )
+            .expect("user proc table mapping trapframe");
+
+        pagetable
+    }
+
+    /// Manually dealloc a user pagetable.
+    /// Reason: the need of the process size.
+    /// LTODO - may subject to change
+    pub fn dealloc_proc_pagetable(&mut self, proc_size: usize) {
+        self.uvm_unmap(TRAMPOLINE.into(), 1, false);
+        self.uvm_unmap(TRAPFRAME.into(), 1, false);
+        // free physical memory
+        if proc_size > 0 {
+            self.uvm_unmap(0, pg_round_up(proc_size)/PGSIZE, true);
+        }
+    }
+
+    /// Load the initcode and map it into the pagetable
+    /// Only used for the very first process
+    pub fn uvm_init(&mut self, code: &[u8]) {
+        if code.len() >= PGSIZE {
+            panic!("initcode more than a page");
+        }
+ 
+        let mem = unsafe { RawSinglePage::new_zeroed() as *mut u8 };
+        self.map_pages(
+            VirtAddr::from(USERTEXT),
+            PGSIZE,
+            PhysAddr::try_from(mem as usize).unwrap(),
+            PteFlag::R | PteFlag::W | PteFlag::X | PteFlag::U)
+            .expect("map_page error");
+        unsafe { ptr::copy_nonoverlapping(code.as_ptr(), mem, code.len()); }
+    }
+
+    /// Grow the user's usable memory size from old size to new size by
+    /// allocating new physical memory and PTEs in the pagetable.
+    /// Old size is typically zero or kept by the process.
+    pub fn uvm_alloc(&mut self, old_size: usize, new_size: usize) -> Result<usize, ()> {
+        if new_size <= old_size {
+            return Ok(old_size)
+        }
+
+        let old_size = pg_round_up(old_size);
+        for cur_size in (old_size..new_size).step_by(PGSIZE) {
+            match unsafe { RawSinglePage::try_new_zeroed() } {
+                Err(_) => {
+                    self.uvm_dealloc(cur_size, old_size);
+                    return Err(())
+                },
+                Ok(mem) => {
+                    match self.map_pages(
+                        unsafe { VirtAddr::from_raw(cur_size) },
+                        PGSIZE, 
+                        unsafe { PhysAddr::from_raw(mem as usize) }, 
+                        PteFlag::R | PteFlag::W | PteFlag::X | PteFlag::U
+                    ) {
+                        Err(s) => {
+                            println!("kernel warning: uvm_alloc occurs {}", s);
+                            unsafe { RawSinglePage::from_raw_and_drop(mem); }
+                            self.uvm_dealloc(cur_size, old_size);
+                            return Err(())
+                        },
+                        Ok(_) => {
+                            // the mem raw pointer is leaked
+                            // but recorded in the pagetable at virtual address cur_size
+                        },
+                    }
+                },
+            }
+        }
+
+        Ok(new_size)
+    }
+
+    /// Deallocates the user memory by decrementing the liner size from old_size to new_size.
+    pub fn uvm_dealloc(&mut self, old_size: usize, new_size: usize) -> usize {
+        if new_size >= old_size {
+            return old_size
+        }
+
+        let old_size_aligned = pg_round_up(old_size);
+        let new_size_aligned = pg_round_up(new_size);
+        if new_size_aligned < old_size_aligned {
+            let count = (old_size_aligned - new_size_aligned) / PGSIZE;
+            self.uvm_unmap(new_size_aligned, count, true);
+        }
+
+        new_size
+    }
+
+    /// Remove in total `count` pages's mapping starting from the passed-in virtual address `va`.
+    /// If `freeing` is true, then also free the physical memory.
+    /// Note: `va` must be page aligned.
+    pub fn uvm_unmap(&mut self, va: usize, count: usize, freeing: bool) {
+        if va % PGSIZE != 0 {
+            panic!("passed-in virtual address is not page aligned");
+        }
+
+        for ca in (va..(va+PGSIZE*count)).step_by(PGSIZE) {
+            let pte = self.walk_mut(unsafe {VirtAddr::from_raw(ca)})
+                                        .expect("unable to find va available");
+            if !pte.is_valid() {
+                panic!("this pte is not valid");
+            }
+            if !pte.is_leaf() {
+                panic!("this pte is not a leaf");
+            }
+            if freeing {
+                let pa = pte.as_phys_addr();
+                unsafe { RawSinglePage::from_raw_and_drop(pa.into_raw() as *mut u8); }
+            }
+            pte.write_zero();
+        }
+    }
+
+    /// Explicitly mark a pte invalid for user.
+    /// Typically used for the guard page.
+    pub fn uvm_clear(&mut self, va: usize) {
+        let pte = self.walk_mut(VirtAddr::try_from(va).unwrap())
+                                                .expect("cannot find available pte");
+        pte.clear_user();
+    }
+
+    /// Copy a null-terminated string from virtual address starting at srcva,
     /// to a kernel u8 slice.
     pub fn copy_in_str(&self, srcva: usize, dst: &mut [u8])
         -> Result<(), &'static str>
@@ -231,27 +413,24 @@ impl PageTable {
                     .offset(distance as isize)
             };
             let mut va_ptr = va.as_ptr();
-            base.add_page();
-            let va_end = base.as_ptr();
-            va = base;
-
+            
             // iterate througn each u8 in a page
-            let enough_space = (dst.len() - i) >= (PGSIZE - distance);
-            while !ptr::eq(va_ptr, va_end) {
-                if !enough_space && i >= dst.len() {
-                    return Err("copy_in_str: dst not enough space")
-                }
-
+            let mut count = min(PGSIZE - distance, dst.len() - i);
+            while count > 0 {
                 unsafe {
-                    dst[i] = *pa_ptr;
+                    dst[i] = ptr::read(pa_ptr);
                     if dst[i] == 0 {
                         return Ok(())
                     }
                     i += 1;
+                    count -= 1;
                     pa_ptr = pa_ptr.add(1);
                     va_ptr = va_ptr.add(1);
                 }
             }
+
+            base.add_page();
+            va = base;
         }
 
         Err("copy_in_str: dst not enough space")
@@ -270,9 +449,10 @@ impl PageTable {
         va.pg_round_down();
         loop {
             let mut pa;
-            match self.walk_addr(va) {
+            match self.walk_addr_mut(va) {
                 Ok(phys_addr) => pa = phys_addr,
                 Err(s) => {
+                    #[cfg(feature = "kernel_warning")]
                     println!("kernel warning: {} when pagetable copy_out", s);
                     return Err(())
                 }
@@ -329,5 +509,13 @@ impl PageTable {
             va.add_page();
             debug_assert_eq!(src, va.as_usize());
         }
+    }
+}
+
+impl Drop for PageTable {
+    /// Recursively free non-first-level pagetables.
+    /// Physical memory should already be freed.
+    fn drop(&mut self) {
+        self.data.iter_mut().for_each(|pte| pte.free());
     }
 }

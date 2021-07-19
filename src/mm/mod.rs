@@ -1,5 +1,5 @@
 use alloc::boxed::Box;
-use core::ptr;
+use core::{alloc::AllocError, ptr};
 
 use crate::consts::PGSIZE;
 use crate::process::CPU_MANAGER;
@@ -15,23 +15,58 @@ mod kvm;
 mod pagetable;
 mod list;
 
-/// Used to alloc page-sized memory.
-/// Typically called with Box::new() and then Box::into_raw(). 
-#[repr(C, align(4096))]
-pub struct RawPage {
-    data: [u8; PGSIZE]
-}
-
-impl RawPage {
+/// Used to alloc pages-sized and page-aligned memory.
+/// The impl typically using Box::new() and then Box::into_raw(). 
+pub trait RawPage: Sized {
     /// Allocate an zeroed physical page.
-    /// Return the raw address of this page.
-    pub unsafe fn new_zeroed() -> usize {
+    /// Return the raw pointer at the starting address of this page.
+    unsafe fn new_zeroed() -> *mut u8 {
         let boxed_page = Box::<Self>::new_zeroed().assume_init();
-        Box::into_raw(boxed_page) as usize
+        Box::into_raw(boxed_page) as *mut u8
+    }
+
+    /// Try to allocate an zeroed physical page.
+    /// If succeed, return the raw pointer at the starting address of this page.
+    /// otherwise, return an [`AllocError`].
+    unsafe fn try_new_zeroed() -> Result<*mut u8, AllocError> {
+        let boxed_page = Box::<Self>::try_new_zeroed()?.assume_init();
+        Ok(Box::into_raw(boxed_page) as *mut u8)
+    }
+
+    /// Reconstructs the box from the previously handed-out raw pointer.
+    /// And then drop the box.
+    unsafe fn from_raw_and_drop(raw: *mut u8) {
+        drop(Box::from_raw(raw as *mut Self));
     }
 }
 
-#[derive(Clone, Copy)]
+/// Used to alloc single-page-sized and page-aligned memory.
+#[repr(C, align(4096))]
+pub struct RawSinglePage {
+    data: [u8; PGSIZE]
+}
+
+impl RawPage for RawSinglePage {}
+
+/// Used to alloc double-page-sized and page-aligned memory.
+/// Similar to [`RawSinglePage`].
+#[repr(C, align(4096))]
+pub struct RawDoublePage {
+    data: [u8; PGSIZE*2]
+}
+
+impl RawPage for RawDoublePage {}
+
+/// Used to alloc quadruple-page-sized and page-aligned memory.
+/// Similar to [`RawSinglePage`].
+#[repr(C, align(4096))]
+pub struct RawQuadPage {
+    data: [u8; PGSIZE*4]
+}
+
+impl RawPage for RawQuadPage {}
+
+#[derive(Clone, Copy, Debug)]
 pub enum Address {
     Virtual(usize),
     Kernel(*const u8),
@@ -87,4 +122,14 @@ impl Address {
             },
         }
     }
+}
+
+#[inline]
+pub fn pg_round_up(address: usize) -> usize {
+    (address + (PGSIZE - 1)) & !(PGSIZE - 1)
+}
+
+#[inline]
+pub fn pg_round_down(address: usize) -> usize {
+    address & !(PGSIZE - 1)
 }

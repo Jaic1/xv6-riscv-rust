@@ -6,6 +6,7 @@
 #![feature(const_fn_union)]
 #![feature(slice_ptr_get)]
 #![feature(new_uninit)]
+#![feature(allocator_api)]
 #![feature(alloc_error_handler)]
 #![allow(dead_code)]
 #![warn(rust_2018_idioms)]

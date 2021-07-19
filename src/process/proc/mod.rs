@@ -1,20 +1,25 @@
 use alloc::boxed::Box;
-use core::convert::TryFrom;
+use core::mem;
 use core::option::Option;
 use core::ptr;
 use core::cell::UnsafeCell;
 
-use crate::{consts::{PGSIZE, TRAMPOLINE, TRAPFRAME, fs::ROOTIPATH}, register::sstatus};
-use crate::mm::{PageTable, PhysAddr, PteFlag, VirtAddr};
-use crate::register::{satp, sepc};
+use crate::consts::{PGSIZE, fs::ROOTIPATH};
+use crate::mm::PageTable;
+use crate::register::{satp, sepc, sstatus};
 use crate::spinlock::{SpinLock, SpinLockGuard};
 use crate::trap::user_trap;
 use crate::fs::{Inode, ICACHE};
 
-use super::{CpuManager, syscall::Syscall};
+use super::CpuManager;
 use super::PROC_MANAGER;
 use super::cpu::CPU_MANAGER;
 use super::{fork_ret, Context, TrapFrame};
+
+use self::syscall::Syscall;
+
+mod syscall;
+mod elf;
 
 #[derive(Clone, Copy, Eq, PartialEq, Debug)]
 pub enum ProcState {
@@ -49,10 +54,12 @@ impl ProcExcl {
 pub struct ProcData {
     kstack: usize,
     sz: usize,
-    pagetable: Option<Box<PageTable>>,
-    tf: *mut TrapFrame,
     context: Context,
     name: [u8; 16],
+    /// trapframe to hold temp user register value, etc
+    pub tf: *mut TrapFrame,
+    /// user pagetable
+    pub pagetable: Option<Box<PageTable>>,
     /// current working directory
     pub cwd: Option<Inode>,
 }
@@ -75,46 +82,13 @@ impl ProcData {
         self.kstack = kstack;
     }
 
-    /// Allocate a new user pagetable for itself
-    /// and map trampoline code and trapframe
-    pub fn proc_pagetable(&mut self) {
-        extern "C" {
-            fn trampoline();
-        }
-
-        let mut pagetable = PageTable::uvm_create();
-        pagetable
-            .map_pages(
-                VirtAddr::from(TRAMPOLINE),
-                PGSIZE,
-                PhysAddr::try_from(trampoline as usize).unwrap(),
-                PteFlag::R | PteFlag::X,
-            )
-            .expect("user proc table mapping trampoline");
-        pagetable
-            .map_pages(
-                VirtAddr::from(TRAPFRAME),
-                PGSIZE,
-                PhysAddr::try_from(self.tf as usize).unwrap(),
-                PteFlag::R | PteFlag::W,
-            )
-            .expect("user proc table mapping trapframe");
-
-        self.pagetable = Some(pagetable);
-    }
-
-    /// Set trapframe
-    pub fn set_tf(&mut self, tf: *mut TrapFrame) {
-        self.tf = tf;
-    }
-
     /// Init the context of the process after it is created
     /// Set its return address to fork_ret,
     /// which start to return to user space.
     pub fn init_context(&mut self) {
         self.context.clear();
         self.context.set_ra(fork_ret as *const () as usize);
-        self.context.set_sp(self.kstack + PGSIZE);
+        self.context.set_sp(self.kstack + PGSIZE*4);
     }
 
     /// Return the process's mutable reference of context
@@ -125,11 +99,11 @@ impl ProcData {
     /// Prepare for the user trap return
     /// Return current proc's satp for assembly code to switch page table
     pub fn user_ret_prepare(&mut self) -> usize {
-        let tf: &mut TrapFrame = unsafe { &mut *self.tf };
+        let tf: &mut TrapFrame = unsafe { self.tf.as_mut().unwrap() };
         tf.kernel_satp = satp::read();
         // current kernel stack's content is cleaned
         // after returning to the kernel space
-        tf.kernel_sp = self.kstack + PGSIZE;
+        tf.kernel_sp = self.kstack + PGSIZE*4;
         tf.kernel_trap = user_trap as usize;
         tf.kernel_hartid = unsafe { CpuManager::cpu_id() };
 
@@ -188,7 +162,7 @@ impl Proc {
         pd.sz = PGSIZE;
 
         // prepare return pc and stack pointer
-        let tf = unsafe { &mut *pd.tf };
+        let tf = unsafe { pd.tf.as_mut().unwrap() };
         tf.epc = 0;
         tf.sp = PGSIZE;
 
@@ -202,16 +176,18 @@ impl Proc {
         }
 
         debug_assert!(pd.cwd.is_none());
-        pd.cwd = Some(ICACHE.namei(&ROOTIPATH).expect("cannot find root inode by '/'"));
+        pd.cwd = Some(ICACHE.namei(&ROOTIPATH).expect("cannot find root inode by b'/'"));
     }
 
     /// Exit the current process. No return.
+    /// Remain zombie state until its parent recycle its resource,
+    /// like trapframe and pagetable.
     pub fn exit(&mut self, status: isize) {
         if unsafe { PROC_MANAGER.is_init_proc(&self) } {
             panic!("init_proc exiting");
         }
 
-        panic!("exit: TODO, status={}", status);
+        todo!("exit: status={}", status);
     }
 
     /// Abondon current process if
@@ -235,14 +211,18 @@ impl Proc {
     pub fn syscall(&mut self) {
         sstatus::intr_on();
 
-        let tf = unsafe { &mut *self.data.get_mut().tf };
+        let tf = unsafe { self.data.get_mut().tf.as_mut().unwrap() };
         let a7 = tf.a7;
         tf.admit_ecall();
-        tf.a0 = match a7 {
+        let sys_result = match a7 {
             7 => self.sys_exec(),
             _ => {
                 panic!("unknown syscall num: {}", a7);
             }
+        };
+        tf.a0 = match sys_result {
+            Ok(ret) => ret,
+            Err(()) => -1isize as usize,
         };
     }
 
@@ -263,7 +243,6 @@ impl Proc {
     /// Do not reacquires lock when awakened,
     /// so the caller must reacquire it if needed. 
     pub fn sleep<T>(&self, channel: usize, guard: SpinLockGuard<'_, T>) {
-        // From xv6-riscv:
         // Must acquire p->lock in order to
         // change p->state and then call sched.
         // Once we hold p->lock, we can be
@@ -288,11 +267,10 @@ impl Proc {
     }
 }
 
-/// From syscall.rs
-/// LTODO - subject to change
 impl Proc {
-    pub fn arg_raw(&self, n: usize) -> usize {
-        let tf = unsafe { &mut *(*self.data.get()).tf };
+    /// Fetch register value.
+    fn arg_raw(&self, n: usize) -> usize {
+        let tf = unsafe { self.data.get().as_ref().unwrap().tf.as_ref().unwrap() };
         match n {
             0 => {tf.a0}
             1 => {tf.a1}
@@ -300,25 +278,58 @@ impl Proc {
             3 => {tf.a3}
             4 => {tf.a4}
             5 => {tf.a5}
-            _ => {
-                panic!("argraw: n is larger than 5");
+            _ => { panic!("n is larger than 5") }
+        }
+    }
+
+    /// Fetch 32-bit register value.
+    /// Note: `as` conversion is performed between usize and i32
+    #[inline]
+    fn arg_i32(&self, n: usize) -> i32 {
+        self.arg_raw(n) as i32
+    }
+
+    /// Fetch a raw user virtual address from register value.
+    /// Note: This raw address could be null,
+    ///     and it might only be used to access user virtual address.
+    #[inline]
+    fn arg_addr(&self, n: usize) -> usize {
+        self.arg_raw(n)
+    }
+
+    /// Fetch a null-terminated string from register pointer.
+    fn arg_str(&self, n: usize, buf: &mut [u8]) -> Result<(), &'static str> {
+        let addr: usize = self.arg_raw(n);
+        let pagetable = unsafe { self.data.get().as_ref().unwrap().pagetable.as_ref().unwrap() };
+        pagetable.copy_in_str(addr, buf)?;
+        Ok(())
+    }
+
+    /// Fetch a virtual address at virtual address `addr`.
+    fn fetch_addr(&self, addr: usize) -> Result<usize, &'static str> {
+        let pd = unsafe { self.data.get().as_ref().unwrap() };
+        if addr + mem::size_of::<usize>() > pd.sz {
+            Err("input addr > proc's mem size")
+        } else {
+            let mut ret: usize = 0;
+            match pd.copy_in(
+                addr, 
+                &mut ret as *mut usize as *mut u8, 
+                mem::size_of::<usize>()
+            ) {
+                Ok(_) => Ok(ret),
+                Err(_) => Err("pagetable copy_in eror"),
             }
         }
     }
 
-    pub fn arg_addr(&self, n: usize) -> *const usize {
-        self.arg_raw(n) as *const usize
-    }
-
-    pub fn arg_str(&self, n: usize, buf: &mut [u8]) -> Result<(), &'static str> {
-        let addr: usize = self.arg_raw(n);
-        let pagetable = unsafe { (*self.data.get()).pagetable.as_ref().unwrap() };
-        pagetable.copy_in_str(addr, buf)?;
-        Ok(())
+    /// Fetch a null-nullterminated string from virtual address `addr` into the kernel buffer.
+    fn fetch_str(&self, addr: usize, dst: &mut [u8]) -> Result<(), &'static str>{
+        let pd = unsafe { self.data.get().as_ref().unwrap() };
+        pd.pagetable.as_ref().unwrap().copy_in_str(addr, dst)
     }
 }
 
-/// from xv6-riscv:
 /// first user program that calls exec("/init")
 static INITCODE: [u8; 51] = [
     0x17, 0x05, 0x00, 0x00, 0x13, 0x05, 0x05, 0x02, 0x97, 0x05, 0x00, 0x00, 0x93, 0x85, 0x05, 0x02,
