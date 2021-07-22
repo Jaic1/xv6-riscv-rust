@@ -62,6 +62,7 @@ rustc -Z unstable-options --print target-spec-json --target riscv64gc-unknown-no
 - [x] add log layer in fs
 - [x] add inode layer in fs
 - [x] complete sys_exec and add elf loader
+- [x] add console, refactor uart and print
 - [ ] add sys_open, sys_read, sys_write
 - [ ] complete a runnable fs
 

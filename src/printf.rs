@@ -1,26 +1,20 @@
-use crate::console;
-use crate::spinlock::SpinLock;
 use core::fmt;
 use core::panic;
-use core::sync::atomic::{AtomicBool, Ordering};
+use core::sync::atomic::Ordering;
 
-/// Pr struct is slightly different,
-/// i.e., it is not wrapped in a SpinLock
-/// Because we need another field(locking),
-/// to represent if we want to use the spinlock when printing.
-/// This trick can make `panic` print something to the console quicker.
-struct Pr {
-    locking: AtomicBool,
-    lock: SpinLock<()>,
-}
+use crate::driver::{console, PANICKED};
+use crate::spinlock::SpinLock;
 
-impl Pr {
+/// ZST Print struct to sequence printing printing across multiple CPUS.
+struct Print;
+
+impl Print {
     fn print(&self, c: u8) {
-        console::consputc(c);
+        console::putc(c);
     }
 }
 
-impl fmt::Write for Pr {
+impl fmt::Write for Print {
     fn write_str(&mut self, s: &str) -> fmt::Result {
         for byte in s.bytes() {
             self.print(byte);
@@ -29,26 +23,21 @@ impl fmt::Write for Pr {
     }
 }
 
-static mut PR: Pr = Pr {
-    locking: AtomicBool::new(true),
-    lock: SpinLock::new((), "pr"),
-};
-
-/// used only in printf's print macro
+/// Used only in printf's print macro.
 ///
-/// note: it needs to be pub because it is used in macro_rules,
-///     which access this fn from the crate-level
+/// Note: It needs to be pub because it is used in macro_rules,
+///     which access this fn from the crate-level.
 pub fn _print(args: fmt::Arguments<'_>) {
     use fmt::Write;
+    static PRINT: SpinLock<()> = SpinLock::new((), "print");
 
-    unsafe {
-        if PR.locking.load(Ordering::Relaxed) {
-            let guard = PR.lock.lock();
-            PR.write_fmt(args).expect("_print: error");
-            drop(guard);
-        } else {
-            PR.write_fmt(args).expect("_print: error");
-        }
+    if PANICKED.load(Ordering::Relaxed) {
+        // no need to lock
+        Print.write_fmt(args).expect("_print: error");
+    } else {
+        let guard = PRINT.lock();
+        Print.write_fmt(args).expect("_print: error");
+        drop(guard);
     }
 }
 
@@ -70,10 +59,8 @@ macro_rules! println {
 
 #[panic_handler]
 fn panic(info: &panic::PanicInfo<'_>) -> ! {
-    unsafe {
-        PR.locking.store(false, Ordering::Relaxed);
-    }
     crate::println!("{}", info);
+    PANICKED.store(true, Ordering::Relaxed);
     loop {}
 }
 

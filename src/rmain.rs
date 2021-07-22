@@ -1,6 +1,6 @@
 use core::sync::atomic::{AtomicBool, Ordering};
 
-use crate::driver::virtio_disk::DISK;
+use crate::driver::{virtio_disk::DISK, console};
 use crate::register::tp;
 use crate::fs::BCACHE;
 use crate::mm::kalloc::KERNEL_HEAP;
@@ -23,7 +23,7 @@ pub unsafe fn rust_main() -> ! {
     let cpuid = tp::read();
     
     if cpuid == 0 {
-        crate::console::consoleinit();
+        console::init();
         println!();
         println!("xv6-riscv-rust is booting");
         println!();

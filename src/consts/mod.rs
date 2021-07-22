@@ -6,6 +6,7 @@ pub use param::*;
 pub use riscv::*;
 
 pub mod fs;
+pub mod driver;
 
 mod memlayout;
 mod param;

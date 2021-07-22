@@ -132,14 +132,14 @@ impl ProcData {
 
 /// Process Struct
 /// 
-/// ProcData could be protected by RefCell,
+/// LTODO - ProcData could be protected by RefCell,
 /// but in case when the process is mutating the ProcData,
 /// but then if it is interrupted and get killed, so it need to
 /// clean its ProcData, so UnsafeCell is better.
 pub struct Proc {
     pub excl: SpinLock<ProcExcl>,
     pub data: UnsafeCell<ProcData>,
-    killed: bool,
+    pub killed: bool,
 }
 
 impl Proc {
@@ -216,6 +216,7 @@ impl Proc {
         tf.admit_ecall();
         let sys_result = match a7 {
             7 => self.sys_exec(),
+            15 => todo!("sys_open"),
             _ => {
                 panic!("unknown syscall num: {}", a7);
             }

@@ -7,6 +7,7 @@ use crate::process::{CPU_MANAGER, CpuManager};
 use crate::spinlock::SpinLock;
 use crate::plic;
 use crate::driver::virtio_disk::DISK;
+use crate::driver::uart::UART;
 
 pub unsafe fn trap_init_hart() {
     extern "C" {
@@ -121,8 +122,7 @@ pub unsafe fn kerneltrap() {
 
             let irq = plic::claim();
             if irq as usize == UART0_IRQ {
-                // TODO - uart intr
-                panic!("kerneltrap(): uart intr");
+                UART.intr();
             } else if irq as usize == VIRTIO0_IRQ {
                 DISK.lock().intr();
             }

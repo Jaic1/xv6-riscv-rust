@@ -1,5 +1,6 @@
 use core::ops::DerefMut;
 
+mod file;
 mod inode;
 mod log;
 mod bio;
@@ -12,6 +13,7 @@ pub use bio::Buf;
 pub use bio::BCACHE;
 pub use inode::{ICACHE, Inode, InodeData};
 pub use log::LOG;
+pub use file::File;
 
 use superblock::SUPER_BLOCK;
 use log::Log;

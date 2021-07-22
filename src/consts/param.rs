@@ -8,8 +8,6 @@ pub const NPROC: usize = 64;
 /// Same value is passed to qemu with -smp option
 pub const NSMP: usize = 3;
 
-pub const CONSOLE_BUF: usize = 128;
-
 /// memory design
 pub const PGSIZE: usize = 4096;
 pub const PGSHIFT: usize = 12;
