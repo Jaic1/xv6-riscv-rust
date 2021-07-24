@@ -13,7 +13,10 @@ pub const NDIRECT: usize = 12;
 /// note: the blockno should be u32
 pub const NINDIRECT: usize = BSIZE / core::mem::size_of::<u32>();
 /// maxinum size of directory name, counting 0 in the end
-pub const DIRSIZE: usize = 14;
+/// LTODO - currently allocated in the stack, should not be large
+pub const MAX_DIR_SIZE: usize = 14;
+/// maxinum size of file in bytes
+pub const MAX_FILE_SIZE: usize = (NDIRECT + NINDIRECT) * BSIZE;
 
 /// root device number
 pub const ROOTDEV: u32 = 1;
@@ -29,3 +32,16 @@ pub const MAXOPBLOCKS: usize = 10;
 pub const NBUF: usize = MAXOPBLOCKS * 3;
 /// size of log space in disk
 pub const LOGSIZE: usize = MAXOPBLOCKS * 3;
+
+/// maxinum number of file opened by a process
+pub const NFILE: usize = 16;
+
+/////////////////////////////////////////////////
+///////////    File Creation Flags   ////////////
+/////////////////////////////////////////////////
+
+pub const O_RDONLY: i32 = 0x0;
+pub const O_WRONLY: i32 = 0x1;
+pub const O_RDWR: i32 = 0x2;
+pub const O_CREATE: i32 = 0x200;
+pub const O_TRUNC: i32 = 0x400;

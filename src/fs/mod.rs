@@ -4,14 +4,14 @@ mod file;
 mod inode;
 mod log;
 mod bio;
-mod bitmap;
+mod block;
 mod superblock;
 
 // TODO - Buf also could?
 pub use bio::Buf;
 // TODO - could be reduced to use xxx after removing usage from rmain.rs
 pub use bio::BCACHE;
-pub use inode::{ICACHE, Inode, InodeData};
+pub use inode::{ICACHE, Inode, InodeData, InodeType};
 pub use log::LOG;
 pub use file::File;
 

@@ -1,10 +1,12 @@
-use alloc::boxed::Box;
+use array_macro::array;
+
+use alloc::{boxed::Box, sync::Arc};
 use core::mem;
 use core::option::Option;
 use core::ptr;
 use core::cell::UnsafeCell;
 
-use crate::consts::{PGSIZE, fs::ROOTIPATH};
+use crate::{consts::{PGSIZE, fs::{NFILE, ROOTIPATH}}, fs::File};
 use crate::mm::PageTable;
 use crate::register::{satp, sepc, sstatus};
 use crate::spinlock::{SpinLock, SpinLockGuard};
@@ -56,6 +58,7 @@ pub struct ProcData {
     sz: usize,
     context: Context,
     name: [u8; 16],
+    open_files: [Option<Arc<File>>; NFILE],
     /// trapframe to hold temp user register value, etc
     pub tf: *mut TrapFrame,
     /// user pagetable
@@ -69,10 +72,11 @@ impl ProcData {
         Self {
             kstack: 0,
             sz: 0,
-            pagetable: None,
-            tf: ptr::null_mut(),
             context: Context::new(),
             name: [0; 16],
+            open_files: array![_ => None; NFILE],
+            tf: ptr::null_mut(),
+            pagetable: None,
             cwd: None,
         }
     }
@@ -127,6 +131,15 @@ impl ProcData {
     #[inline]
     pub fn copy_in(&self, src: usize, dst: *mut u8, count: usize) -> Result<(), ()> {
         self.pagetable.as_ref().unwrap().copy_in(src, dst, count)
+    }
+
+    /// Allocate a new file descriptor.
+    /// The returned fd could be used directly to index, because it is private to the process.
+    pub fn alloc_fd(&mut self) -> Option<usize> {
+        self.open_files.iter()
+            .enumerate()
+            .find(|(_, f)| f.is_none())
+            .map(|(i, _)| i)
     }
 }
 
@@ -216,7 +229,9 @@ impl Proc {
         tf.admit_ecall();
         let sys_result = match a7 {
             7 => self.sys_exec(),
-            15 => todo!("sys_open"),
+            10 => self.sys_dup(),
+            15 => self.sys_open(),
+            16 => self.sys_write(),
             _ => {
                 panic!("unknown syscall num: {}", a7);
             }
@@ -296,6 +311,18 @@ impl Proc {
     #[inline]
     fn arg_addr(&self, n: usize) -> usize {
         self.arg_raw(n)
+    }
+
+    /// Fetch a file descriptor from register value.
+    /// Also Check if the fd is valid.
+    #[inline]
+    fn arg_fd(&mut self, n: usize) -> Result<usize, ()> {
+        let fd = self.arg_raw(n);
+        if fd >= NFILE || self.data.get_mut().open_files[fd].is_none() {
+            Err(())
+        } else {
+            Ok(fd)
+        }
     }
 
     /// Fetch a null-terminated string from register pointer.

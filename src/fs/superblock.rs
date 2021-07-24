@@ -77,6 +77,12 @@ impl SuperBlock {
         blockno
     }
 
+    /// Return the total size of inodes.
+    pub fn inode_size(&self) -> u32 {
+        let sb = self.read();
+        sb.ninodes
+    }
+
     /// Given a block number in the disk.
     /// Return the relevant block number of the (controlling) bitmap block.
     pub fn bitmap_blockno(&self, blockno: u32) -> u32 {

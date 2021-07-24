@@ -27,7 +27,7 @@ pub fn load(p: &mut Proc, path: &[u8], argv: &[Option<Box<[u8; MAXARGLEN]>>]) ->
     // create a new empty pagetable, but not assign yet
     let mut idata = inode.lock();
     let mut elf = MaybeUninit::<ElfHeader>::uninit();
-    if idata.read(
+    if idata.iread(
         Address::KernelMut(elf.as_mut_ptr() as *mut u8),
         0, 
         mem::size_of::<ElfHeader>() as u32
@@ -51,7 +51,7 @@ pub fn load(p: &mut Proc, path: &[u8], argv: &[Option<Box<[u8; MAXARGLEN]>>]) ->
     let mut off = elf.phoff as u32;
     for _ in 0..elf.phnum {
         let mut ph = MaybeUninit::<ProgHeader>::uninit();
-        if idata.read(Address::KernelMut(ph.as_mut_ptr() as *mut u8), off, ph_size).is_err() {
+        if idata.iread(Address::KernelMut(ph.as_mut_ptr() as *mut u8), off, ph_size).is_err() {
             pgt.dealloc_proc_pagetable(proc_size);
             drop(pgt); drop(idata); drop(inode); LOG.end_op();
             return Err("cannot read elf program header")
@@ -176,7 +176,7 @@ fn load_seg(pgt: &mut PageTable, va: usize, idata: &mut SleepLockGuard<'_, Inode
         } else {
             PGSIZE as u32
         };
-        if idata.read(Address::KernelMut(pa as *mut u8), offset+i, count).is_err() {
+        if idata.iread(Address::KernelMut(pa as *mut u8), offset+i, count).is_err() {
             return Err(())
         }
         va.add_page();

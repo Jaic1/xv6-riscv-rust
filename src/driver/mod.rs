@@ -9,7 +9,7 @@ pub mod uart;
 /// Used to signal whether any of the harts panic.
 pub(crate) static PANICKED: AtomicBool = AtomicBool::new(false);
 
-static DEVICES: [Option<Device>; NDEV] = [
+pub static DEVICES: [Option<Device>; NDEV] = [
     /* 0 */   None,
     /* 1 */   Some(Device { read: console::read, write: console::write }),
     /* 2 */   None,
@@ -22,7 +22,9 @@ static DEVICES: [Option<Device>; NDEV] = [
     /* 9 */   None,
 ];
 
-struct Device {
-    read: fn(Address, usize) -> Result<usize, ()>,
-    write: fn(Address, usize) -> Result<usize, ()>,
+pub struct Device {
+    /// function: read from [`Address`] count bytes.
+    pub read: fn(Address, usize) -> Result<usize, ()>,
+    /// function: write to [`Address`] count bytes.
+    pub write: fn(Address, usize) -> Result<usize, ()>,
 }

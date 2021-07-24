@@ -1,11 +1,14 @@
-//! Bitmap block operations
+//! disk block operations
+//! include bitmap and inode block
 
 use core::ptr;
 
 use bit_field::BitField;
 
 use crate::consts::fs::BPB;
+
 use super::{BCACHE, superblock::SUPER_BLOCK, LOG};
+use super::inode::{DiskInode, InodeType, locate_inode_offset};
 
 /// Allocate a free block in the disk/fs.
 /// It will zero the block content before return it.
@@ -56,4 +59,23 @@ pub fn bm_free(dev: u32, blockno: u32) {
     }
     byte.set_bit(bit, false);
     LOG.write(buf);
+}
+
+/// Allocate an inode in the disk/fs, return the inode number.
+/// Panics if there are not enough inodes.
+pub fn inode_alloc(dev: u32, itype: InodeType) -> u32 {
+    let size = unsafe { SUPER_BLOCK.inode_size() };
+    for inum in 1..size {
+        let blockno = unsafe { SUPER_BLOCK.locate_inode(inum) };
+        let offset = locate_inode_offset(inum);
+        let mut buf = BCACHE.bread(dev, blockno);
+        let dinode = unsafe { (buf.raw_data_mut() as *mut DiskInode).offset(offset) };
+        let dinode = unsafe { &mut *dinode };
+        if dinode.try_alloc(itype).is_ok() {
+            LOG.write(buf);
+            return inum
+        }
+    }
+
+    panic!("not enough inode to alloc");
 }

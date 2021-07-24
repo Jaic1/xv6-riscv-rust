@@ -63,7 +63,7 @@ rustc -Z unstable-options --print target-spec-json --target riscv64gc-unknown-no
 - [x] add inode layer in fs
 - [x] complete sys_exec and add elf loader
 - [x] add console, refactor uart and print
-- [ ] add sys_open, sys_read, sys_write
+- [x] add file layer and sys_open, sys_dup, sys_write
 - [ ] complete a runnable fs
 
 ## TODO
@@ -78,6 +78,7 @@ rustc -Z unstable-options --print target-spec-json --target riscv64gc-unknown-no
 - [ ] refactor superblock
 - [ ] refactor `begin_op` and `end_op`
 - [ ] compare raw pointer's `get_mut` method with null-unchecked version `&mut *`
+- [ ] [new_uninit](https://github.com/rust-lang/rust/issues/63291)
 
 ## Useful Reference
 [Why implementing Send trait for Mutex?](https://users.rust-lang.org/t/why-we-implement-send-trait-for-mutex/39065)  
