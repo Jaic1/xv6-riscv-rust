@@ -13,7 +13,7 @@ pub use bio::Buf;
 pub use bio::BCACHE;
 pub use inode::{ICACHE, Inode, InodeData, InodeType, FileStat};
 pub use log::LOG;
-pub use file::File;
+pub use file::{File, Pipe};
 
 use superblock::SUPER_BLOCK;
 use log::Log;

@@ -242,7 +242,7 @@ impl BuddySystem {
 
         // check layout
         if layout.size() > blk_size(sizei) {
-            panic!("  buddy system: dealloc wrong layout {:?}", layout);
+            panic!("  buddy system: layout {:?} > blk size {}", layout, blk_size(sizei));
         }
 
         // free and coalesce

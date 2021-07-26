@@ -1,13 +1,14 @@
 //! spinlock module
-//! unlike xv6-riscv, xv6-riscv-rust wraps data into a spinlock
-//! useful reference crate spin(https://crates.io/crates/spin)
+//! A spinlock wraps data into itself to protect them
 
 use core::cell::{Cell, UnsafeCell};
 use core::ops::{Deref, DerefMut, Drop};
 use core::sync::atomic::{fence, AtomicBool, Ordering};
+use core::ptr::addr_of_mut;
 
 use crate::process::{CpuManager, pop_off, push_off};
 
+#[derive(Debug)]
 pub struct SpinLock<T: ?Sized> {
     lock: AtomicBool,
     name: &'static str,
@@ -27,6 +28,14 @@ impl<T> SpinLock<T> {
             cpuid: Cell::new(-1),
             data: UnsafeCell::new(data),
         }
+    }
+
+    /// Init the name of the [`SpinLock`].
+    /// Useful when the memory is allocated but not initialized.
+    /// SAFETY: This should be called when there is only one thread owns this [`SpinLock`].
+    #[inline(always)]
+    pub unsafe fn init_name(lock: *mut Self, name: &'static str) {
+        addr_of_mut!((*lock).name).write(name);
     }
 }
 

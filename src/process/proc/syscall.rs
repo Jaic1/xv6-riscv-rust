@@ -3,12 +3,13 @@ use array_macro::array;
 use alloc::string::String;
 use alloc::boxed::Box;
 use alloc::sync::Arc;
-use core::{fmt::Display, mem};
+use core::convert::TryInto;
+use core::fmt::Display;
+use core::mem;
 
-use crate::consts::{MAXPATH, MAXARG, MAXARGLEN};
+use crate::consts::{MAXPATH, MAXARG, MAXARGLEN, fs::MAX_DIR_SIZE};
 use crate::process::PROC_MANAGER;
-use crate::fs::{self, File};
-use crate::mm::Address;
+use crate::fs::{ICACHE, Inode, InodeType, LOG, File, Pipe, FileStat};
 
 use super::{Proc, elf};
 
@@ -18,20 +19,23 @@ pub trait Syscall {
     fn sys_fork(&mut self) -> SysResult;
     fn sys_exit(&mut self) -> SysResult;
     fn sys_wait(&mut self) -> SysResult;
+    fn sys_pipe(&mut self) -> SysResult;
     fn sys_read(&mut self) -> SysResult;
     fn sys_exec(&mut self) -> SysResult;
     fn sys_fstat(&mut self) -> SysResult;
+    fn sys_chdir(&mut self) -> SysResult;
     fn sys_dup(&mut self) -> SysResult;
     fn sys_sbrk(&mut self) -> SysResult;
     fn sys_open(&mut self) -> SysResult;
     fn sys_write(&mut self) -> SysResult;
+    fn sys_unlink(&mut self) -> SysResult;
     fn sys_close(&mut self) -> SysResult;
 }
 
 impl Syscall for Proc {
-    /// Redirect to [`fork`].
+    /// Redirect to [`Proc::fork`].
     ///
-    /// [`fork`]: Proc::fork
+    /// [`Proc::fork`]: Proc::fork
     fn sys_fork(&mut self) -> SysResult {
         let ret = self.fork();
 
@@ -60,9 +64,38 @@ impl Syscall for Proc {
         let ret =  unsafe { PROC_MANAGER.waiting(self.index, addr) };
 
         #[cfg(feature = "trace_syscall")]
-        println!("[pid={}].wait(addr={:#x}) = {:?}(pid)", self.excl.lock().pid, addr, ret);
+        println!("[{}].wait(addr={:#x}) = {:?}(pid)", self.excl.lock().pid, addr, ret);
 
         ret
+    }
+
+    /// Create pipe for user.
+    fn sys_pipe(&mut self) -> SysResult {
+        let pipefds_addr = self.arg_addr(0);
+        let addr_fdread = pipefds_addr;
+        let addr_fdwrite = pipefds_addr+mem::size_of::<u32>();
+
+        // alloc fd
+        let pdata = self.data.get_mut();
+        let (fd_read, fd_write) = pdata.alloc_fd2().ok_or(())?;
+
+        // alloc pipe
+        let (file_read, file_write) = Pipe::create().ok_or(())?;
+
+        // transfer fd to user
+        let fd_read_u32: u32 = fd_read.try_into().unwrap();
+        let fd_write_u32: u32 = fd_write.try_into().unwrap();
+        pdata.copy_out(&fd_read_u32 as *const u32 as *const u8, addr_fdread, mem::size_of::<u32>())?;
+        pdata.copy_out(&fd_write_u32 as *const u32 as *const u8, addr_fdwrite, mem::size_of::<u32>())?;
+
+        // assign the file to process
+        pdata.open_files[fd_read].replace(file_read);
+        pdata.open_files[fd_write].replace(file_write);
+
+        #[cfg(feature = "trace_syscall")]
+        println!("[{}].pipe(addr={:#x}) = ok, fd=[{},{}]", self.excl.lock().pid, pipefds_addr, fd_read, fd_write);
+
+        Ok(0)
     }
 
     /// Read form file descriptor.
@@ -73,16 +106,17 @@ impl Syscall for Proc {
         if count <= 0 {
             return Err(())
         }
+        let count = count as u32;
         
         let file = self.data.get_mut().open_files[fd].as_ref().unwrap();
-        let ret = file.fread(Address::Virtual(addr), count as usize);
+        let ret = file.fread(addr, count);
 
         #[cfg(feature = "trace_syscall")]
         println!("[{}].read(fd={}, addr={:#x}, count={}) = {:?}", self.excl.lock().pid, fd, addr, count, ret);
 
-        ret
+        ret.map(|count| count as usize)
     }
-    
+
     /// Load an elf binary and execuate it the currrent process context.
     fn sys_exec(&mut self) -> SysResult {
         let mut path: [u8; MAXPATH] = [0; MAXPATH];
@@ -127,7 +161,7 @@ impl Syscall for Proc {
         }
 
         #[cfg(feature = "trace_syscall")]
-        println!("exec({}, {:#x}) = {:?}", String::from_utf8_lossy(&path), uargv, result);
+        println!("[{}].exec({}, {:#x}) = {:?}", self.excl.lock().pid, String::from_utf8_lossy(&path), uargv, result);
 
         if result.is_err() {
             syscall_warning(error);
@@ -139,13 +173,13 @@ impl Syscall for Proc {
     fn sys_fstat(&mut self) -> SysResult {
         let fd = self.arg_fd(0)?;
         let addr = self.arg_addr(1);
-        let mut stat = fs::FileStat::uninit();
+        let mut stat = FileStat::uninit();
         let file = self.data.get_mut().open_files[fd].as_ref().unwrap();
         let ret = if file.fstat(&mut stat).is_err() {
             Err(())
         } else {
             let pgt = self.data.get_mut().pagetable.as_mut().unwrap();
-            if pgt.copy_out(&stat as *const fs::FileStat as *const u8, addr, mem::size_of::<fs::FileStat>()).is_err() {
+            if pgt.copy_out(&stat as *const FileStat as *const u8, addr, mem::size_of::<FileStat>()).is_err() {
                 Err(())
             } else {
                 Ok(0)
@@ -156,6 +190,32 @@ impl Syscall for Proc {
         println!("[{}].fstat(fd={}, addr={:#x}) = {:?}", self.excl.lock().pid, fd, addr, stat);
 
         ret
+    }
+
+    /// Change the current process's working directory,
+    fn sys_chdir(&mut self) -> SysResult {
+        let mut path: [u8; MAXPATH] = [0; MAXPATH];
+        self.arg_str(0, &mut path).map_err(syscall_warning)?;
+
+        LOG.begin_op();
+        let inode: Inode;
+        if let Some(i) = ICACHE.namei(&path) {
+            inode = i;
+        } else {
+            LOG.end_op();
+            return Err(())
+        }
+        let idata = inode.lock();
+        if idata.get_itype() != InodeType::Directory {
+            drop(idata); drop(inode); LOG.end_op();
+            return Err(())
+        }
+        drop(idata);
+        let old_cwd = self.data.get_mut().cwd.replace(inode);
+        debug_assert!(old_cwd.is_some());
+        drop(old_cwd);
+        LOG.end_op();
+        Ok(0)
     }
 
     /// Duplicate a file descriptor.
@@ -175,9 +235,9 @@ impl Syscall for Proc {
         Ok(new_fd)
     }
 
-    /// Redirect to [`sbrk`].
+    /// Redirect to [`ProcData::sbrk`].
     ///
-    /// [`sbrk`]: ProcData::sbrk
+    /// [`ProcData::sbrk`]: ProcData::sbrk
     fn sys_sbrk(&mut self) -> SysResult {
         let increment = self.arg_i32(0);
         let ret = self.data.get_mut().sbrk(increment);
@@ -190,7 +250,7 @@ impl Syscall for Proc {
 
     /// Open and optionally create a file.
     /// Note1: It can only possibly create a regular file,
-    ///     use [`sys_mknod`] to creata special file instead.
+    ///     use [`Syscall::sys_mknod`] to creata special file instead.
     /// Note2: File permission and modes are not supported yet.
     fn sys_open(&mut self) -> SysResult {
         let mut path: [u8; MAXPATH] = [0; MAXPATH];
@@ -216,14 +276,46 @@ impl Syscall for Proc {
     fn sys_write(&mut self) -> SysResult {
         let fd = self.arg_fd(0)?;
         let addr = self.arg_addr(1);
-        let count = self.arg_raw(2);
+        let count = self.arg_i32(2);
+        if count <= 0 {
+            return Err(())
+        }
+        let count = count as u32;
         let file = self.data.get_mut().open_files[fd].as_ref().unwrap();
-        let ret = file.fwrite(Address::Virtual(addr), count);
+        let ret = file.fwrite(addr, count);
 
         #[cfg(feature = "trace_syscall")]
         println!("[{}].write({}, {:#x}, {}) = {:?}", self.excl.lock().pid, fd, addr, count, ret);
 
-        ret
+        ret.map(|count| count as usize)
+    }
+
+    /// Delete a pathname and possibly delete the refered inode in the fs.
+    /// In essence, [`Syscall::sys_unlink`] will decrement the link count of the inode.
+    fn sys_unlink(&mut self) -> SysResult {
+        let mut path: [u8; MAXPATH] = [0; MAXPATH];
+        self.arg_str(0, &mut path).map_err(syscall_warning)?;
+
+        LOG.begin_op();
+        let mut name: [u8; MAX_DIR_SIZE] = [0; MAX_DIR_SIZE];
+        let dir_inode: Inode;
+        if let Some(inode) = ICACHE.namei_parent(&path, &mut name) {
+            dir_inode = inode;
+        } else {
+            LOG.end_op();
+            return Err(())
+        }
+
+        let mut dir_idata = dir_inode.lock();
+        let ret = dir_idata.dir_unlink(&name);
+        drop(dir_idata);
+        drop(dir_inode);
+        LOG.end_op();
+
+        #[cfg(feature = "trace_syscall")]
+        println!("[{}].unlink(path={}) = {:?}", self.excl.lock().pid, String::from_utf8_lossy(&path), ret);
+
+        ret.map(|()| 0)
     }
 
     /// Given a file descriptor, close the opened file.

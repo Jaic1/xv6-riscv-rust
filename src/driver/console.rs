@@ -17,7 +17,7 @@ pub unsafe fn init() {
 
 /// Read from console `tot` bytes to `dst`,
 /// which might be a virtual or kernel [`Address`].
-pub(super) fn read(mut dst: Address, tot: usize) -> Result<usize, ()> {
+pub(super) fn read(mut dst: Address, tot: u32) -> Result<u32, ()> {
     let mut console = CONSOLE.lock();
 
     let mut left = tot;
@@ -66,7 +66,7 @@ pub(super) fn read(mut dst: Address, tot: usize) -> Result<usize, ()> {
 
 /// Write to console `tot` bytes from `src`,
 /// which might be a virtual or kernel [`Address`].
-pub(super) fn write(mut src: Address, tot: usize) -> Result<usize, ()> {
+pub(super) fn write(mut src: Address, tot: u32) -> Result<u32, ()> {
     for i in 0..tot {
         let mut c = 0u8;
         if src.copy_in(&mut c as *mut u8, 1).is_err() {

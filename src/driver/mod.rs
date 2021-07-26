@@ -24,7 +24,7 @@ pub static DEVICES: [Option<Device>; NDEV] = [
 
 pub struct Device {
     /// function: read from [`Address`] count bytes.
-    pub read: fn(Address, usize) -> Result<usize, ()>,
+    pub read: fn(Address, u32) -> Result<u32, ()>,
     /// function: write to [`Address`] count bytes.
-    pub write: fn(Address, usize) -> Result<usize, ()>,
+    pub write: fn(Address, u32) -> Result<u32, ()>,
 }

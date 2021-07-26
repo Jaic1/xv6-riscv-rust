@@ -1,9 +1,10 @@
 use array_macro::array;
 
-use alloc::{boxed::Box, sync::Arc};
+use alloc::boxed::Box;
+use alloc::sync::Arc;
 use core::mem;
-use core::option::Option;
 use core::sync::atomic::{AtomicBool, Ordering};
+use core::option::Option;
 use core::ptr;
 use core::cell::UnsafeCell;
 
@@ -146,11 +147,24 @@ impl ProcData {
 
     /// Allocate a new file descriptor.
     /// The returned fd could be used directly to index, because it is private to the process.
-    pub fn alloc_fd(&mut self) -> Option<usize> {
+    fn alloc_fd(&mut self) -> Option<usize> {
         self.open_files.iter()
             .enumerate()
             .find(|(_, f)| f.is_none())
             .map(|(i, _)| i)
+    }
+
+    /// Allocate a pair of file descriptors.
+    /// Typically used for pipe creation.
+    fn alloc_fd2(&mut self) -> Option<(usize, usize)> {
+        let mut iter = self.open_files.iter()
+            .enumerate()
+            .filter(|(_, f)| f.is_none())
+            .take(2)
+            .map(|(i, _)| i);
+        let fd1 = iter.next()?;
+        let fd2 = iter.next()?;
+        Some((fd1, fd2))
     }
 
     /// Clean up the content in [`ProcData`],
@@ -280,13 +294,16 @@ impl Proc {
             1 => self.sys_fork(),
             2 => self.sys_exit(),
             3 => self.sys_wait(),
+            4 => self.sys_pipe(),
             5 => self.sys_read(),
             7 => self.sys_exec(),
             8 => self.sys_fstat(),
+            9 => self.sys_chdir(),
             10 => self.sys_dup(),
             12 => self.sys_sbrk(),
             15 => self.sys_open(),
             16 => self.sys_write(),
+            18 => self.sys_unlink(),
             21 => self.sys_close(),
             _ => {
                 panic!("unknown syscall num: {}", a7);

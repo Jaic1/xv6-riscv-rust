@@ -140,12 +140,12 @@ impl InodeCache {
                 drop(data_guard);
                 return Some(inode)
             }
-            match data_guard.dir_lookup(name) {
+            match data_guard.dir_lookup(name, false) {
                 None => {
                     drop(data_guard);
                     return None
                 },
-                Some(last_inode) => {
+                Some((last_inode, _)) => {
                     drop(data_guard);
                     inode = last_inode;
                 },
@@ -186,7 +186,7 @@ impl InodeCache {
         let mut dir_idata = dir_inode.lock();
 
         // lookup first
-        if let Some(inode) = dir_idata.dir_lookup(&name) {
+        if let Some((inode, _)) = dir_idata.dir_lookup(&name, false) {
             if reuse {
                 return Some(inode)
             } else {
@@ -556,8 +556,10 @@ impl InodeData {
     }
 
     /// Look for an inode entry in this directory according the name.
+    /// If the `need_offset` flag is set,
+    /// also return the corresponding offset of the entry inside the directory.
     /// Panics if this is not a directory.
-    fn dir_lookup(&mut self, name: &[u8; MAX_DIR_SIZE]) -> Option<Inode> {
+    fn dir_lookup(&mut self, name: &[u8; MAX_DIR_SIZE], need_offset: bool) -> Option<(Inode, Option<u32>)> {
         let (dev, _) = *self.valid.as_ref().unwrap();
         debug_assert!(dev != 0);
         if self.dinode.itype != InodeType::Directory {
@@ -565,7 +567,7 @@ impl InodeData {
         }
 
         let de_size = mem::size_of::<DirEntry>();
-        let mut dir_entry = DirEntry::new();
+        let mut dir_entry = DirEntry::empty();
         let dir_entry_ptr = Address::KernelMut(&mut dir_entry as *mut _ as *mut u8);
         for offset in (0..self.dinode.size).step_by(de_size) {
             self.iread(dir_entry_ptr, offset, de_size as u32).expect("read dir entry");
@@ -577,7 +579,8 @@ impl InodeData {
                     break;
                 }
                 if dir_entry.name[i] == 0 {
-                    return Some(ICACHE.get(dev, dir_entry.inum as u32))
+                    return Some((ICACHE.get(dev, dir_entry.inum as u32),
+                        if need_offset { Some(offset) } else { None }))
                 }
             }
         }
@@ -594,18 +597,18 @@ impl InodeData {
         let inum = inum as u16;
 
         // the entry should not be present
-        if self.dir_lookup(name).is_some() {
+        if self.dir_lookup(name, false).is_some() {
             // auto drop the returned inode
             return Err(())
         }
 
         // allocate a dir entry
         let de_size = mem::size_of::<DirEntry>() as u32;
-        let mut dir_entry = DirEntry::new();
+        let mut dir_entry = DirEntry::empty();
         let dir_entry_ptr = Address::KernelMut(&mut dir_entry as *mut _ as *mut u8);
         let mut offset = self.dinode.size;
         for off in (0..self.dinode.size).step_by(de_size as usize) {
-            self.iread(dir_entry_ptr, offset, de_size).expect("read dir entry");
+            self.iread(dir_entry_ptr, off, de_size).expect("read dir entry");
             if dir_entry.inum == 0 {
                 offset = off;
                 break
@@ -621,6 +624,73 @@ impl InodeData {
         }
 
         Ok(())
+    }
+
+    /// Unlink an inode according to the name in the current directory.
+    /// Also remove its entry in the directory.
+    /// Panics if the inode data is not directory.
+    /// It must be called within a log transaction.
+    pub fn dir_unlink(&mut self, name: &[u8; MAX_DIR_SIZE]) -> Result<(), ()> {
+        // the name should not be . and ..
+        if name[0] == b'.' && (name[1] == 0 || (name[1] == b'.' && name[2] == 0)) {
+            return Err(())
+        }
+
+        // lookup the entry correspond to the name
+        let inode: Inode;
+        let offset: u32;
+        match self.dir_lookup(&name, true) {
+            Some((i, Some(off))) => {
+                inode = i;
+                offset = off;
+            },
+            _ => return Err(()),
+        }
+
+        // check the entry
+        let mut idata = inode.lock();
+        if idata.dinode.nlink < 1 {
+            panic!("entry inode's link is zero");
+        }
+        if idata.dinode.itype == InodeType::Directory && !idata.dir_is_empty() {
+            return Err(())
+        }
+
+        // empty the entry
+        let de_size = mem::size_of::<DirEntry>() as u32;
+        let dir_entry = DirEntry::empty();
+        let dir_entry_ptr = Address::Kernel(&dir_entry as *const DirEntry as *const u8);
+        if self.iwrite(dir_entry_ptr, offset, de_size).is_err() {
+            panic!("cannot write entry previously read");
+        }
+
+        // decrement some links
+        if idata.dinode.itype == InodeType::Directory {
+            self.dinode.nlink -= 1;
+            self.update();
+        }
+        idata.dinode.nlink -= 1;
+        idata.update();
+        
+        Ok(())
+    }
+
+    /// Test if the directory inode is empty.
+    fn dir_is_empty(&mut self) -> bool {
+        let de_size = mem::size_of::<DirEntry>() as u32;
+        let mut dir_entry = DirEntry::empty();
+        let dir_entry_ptr = &mut dir_entry as *mut DirEntry;
+        let dir_entry_addr = Address::KernelMut(dir_entry_ptr as *mut u8);
+        for offset in ((2*de_size)..(self.dinode.size)).step_by(de_size as usize) {
+            if self.iread(dir_entry_addr, offset, de_size).is_err() {
+                panic!("read dir entry");
+            }
+            if dir_entry.inum != 0 {
+                return false
+            }
+        }
+
+        return true
     }
 }
 
@@ -734,7 +804,7 @@ struct DirEntry {
 }
 
 impl DirEntry {
-    const fn new() -> Self {
+    const fn empty() -> Self {
         Self {
             inum: 0,
             name: [0; MAX_DIR_SIZE],

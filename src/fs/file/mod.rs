@@ -1,4 +1,5 @@
 use alloc::sync::Arc;
+use core::cell::UnsafeCell;
 use core::cmp::min;
 use core::convert::TryInto;
 
@@ -11,6 +12,10 @@ use crate::mm::Address;
 use super::{ICACHE, LOG, inode::FileStat};
 use super::{Inode, InodeType};
 
+mod pipe;
+
+pub use pipe::Pipe;
+
 /// File abstraction above inode.
 /// It can represent regular file, device and pipe.
 #[derive(Debug)]
@@ -20,9 +25,12 @@ pub struct File {
     writable: bool,
 }
 
+unsafe impl Send for File {}
+unsafe impl Sync for File {}
+
 impl File {
     /// Open a file and optionally create a regular file.
-    /// LTODO - avoid stack allocation
+    /// LTODO - avoid stack allocation by Arc::new - consider box syntax?
     pub fn open(path: &[u8], flags: i32) -> Option<Arc<Self>> {
         LOG.begin_op();
 
@@ -57,14 +65,14 @@ impl File {
                     return None
                 }
                 drop(idata);
-                inner = FileInner::Regular(FileRegular { offset: 0, inode: Some(inode) });
+                inner = FileInner::Regular(FileRegular { offset: UnsafeCell::new(0), inode: Some(inode) });
             },
             InodeType::File => {
                 if flags & O_TRUNC > 0 {
                     idata.truncate();
                 }
                 drop(idata);
-                inner = FileInner::Regular(FileRegular { offset: 0, inode: Some(inode) });
+                inner = FileInner::Regular(FileRegular { offset: UnsafeCell::new(0), inode: Some(inode) });
             },
             InodeType::Device => {
                 let (major, _) = idata.get_devnum();
@@ -87,56 +95,60 @@ impl File {
 
     /// Read from file to user buffer at `addr` in total `count` bytes.
     /// Return the acutal conut of bytes read.
-    pub fn fread(&self, addr: Address, count: usize) -> Result<usize, ()> {
+    pub fn fread(&self, addr: usize, count: u32) -> Result<u32, ()> {
         if !self.readable {
             return Err(())
         }
 
         match self.inner {
-            FileInner::Pipe => todo!("pipe read"),
+            FileInner::Pipe(ref pipe) => pipe.read(addr, count),
             FileInner::Regular(ref file) => {
                 let mut idata = file.inode.as_ref().unwrap().lock();
-                match idata.try_iread(addr, file.offset, count.try_into().unwrap()) {
+                let offset = unsafe { &mut *file.offset.get() };
+                match idata.try_iread(Address::Virtual(addr), *offset, count.try_into().unwrap()) {
                     Ok(read_count) => {
-                        // file.offset += read_count; TODO
-                        Ok(read_count as usize)
+                        *offset += read_count;
+                        drop(idata);
+                        Ok(read_count)
                     },
                     Err(()) => Err(())
                 }
             },
             FileInner::Device(ref dev) => {
                 let dev_read = DEVICES[dev.major as usize].as_ref().ok_or(())?.read;
-                dev_read(addr, count)
+                dev_read(Address::Virtual(addr), count)
             },
         }
     }
 
     /// Write user data from `addr` to file in total `count` bytes.
     /// Return the acutal conut of bytes written.
-    pub fn fwrite(&self, addr: Address, count: usize) -> Result<usize, ()> {
+    pub fn fwrite(&self, addr: usize, count: u32) -> Result<u32, ()> {
         if !self.writable {
             return Err(())
         }
 
         match self.inner {
-            FileInner::Pipe => todo!("pipe write"),
+            FileInner::Pipe(ref pipe) => pipe.write(addr, count),
             FileInner::Regular(ref file) => {
                 let batch = ((MAXOPBLOCKS-4)/2*BSIZE) as u32;
-                let count_u32 = count as u32;
-                let mut addr = addr;
-                for i in (0..count_u32).step_by(batch as usize) {
-                    let write_count = min(batch, count_u32 - i);
+                let mut addr = Address::Virtual(addr);
+                for i in (0..count).step_by(batch as usize) {
+                    let write_count = min(batch, count - i);
                     LOG.begin_op();
                     let mut idata = file.inode.as_ref().unwrap().lock();
-                    let ret = idata.try_iwrite(addr, file.offset, write_count);
+                    let offset = unsafe { &mut *file.offset.get() };
+                    let ret = idata.try_iwrite(addr, *offset, write_count);
+                    if let Ok(actual_count) = ret {
+                        *offset += actual_count;
+                    }
                     drop(idata);
                     LOG.end_op();
 
                     match ret {
                         Ok(actual_count) => {
-                            // file.offset += actual_count; TODO
                             if actual_count != write_count {
-                                return Ok((i+actual_count) as usize)
+                                return Ok(i+actual_count)
                             }
                         },
                         Err(()) => return Err(()),
@@ -147,7 +159,7 @@ impl File {
             },
             FileInner::Device(ref dev) => {
                 let dev_write = DEVICES[dev.major as usize].as_ref().ok_or(())?.write;
-                dev_write(addr, count)
+                dev_write(Address::Virtual(addr), count)
             },
         }
     }
@@ -156,7 +168,7 @@ impl File {
     pub fn fstat(&self, stat: &mut FileStat) -> Result<(), ()> {
         let inode: &Inode;
         match self.inner {
-            FileInner::Pipe => return Err(()),
+            FileInner::Pipe(_) => return Err(()),
             FileInner::Regular(ref file) => inode = file.inode.as_ref().unwrap(),
             FileInner::Device(ref dev) => inode = dev.inode.as_ref().unwrap(),
         }
@@ -170,7 +182,7 @@ impl Drop for File {
     /// Close the file.
     fn drop(&mut self) {
         match self.inner {
-            FileInner::Pipe => todo!(),
+            FileInner::Pipe(ref pipe) => pipe.close(self.writable),
             FileInner::Regular(ref mut file) => {
                 LOG.begin_op();
                 drop(file.inode.take());
@@ -187,14 +199,15 @@ impl Drop for File {
 
 #[derive(Debug)]
 enum FileInner {
-    Pipe,
+    Pipe(Arc<Pipe>),
     Regular(FileRegular),
     Device(FileDevice),
 }
 
 #[derive(Debug)]
 struct FileRegular {
-    offset: u32,
+    /// offset is protected by inode's lock
+    offset: UnsafeCell<u32>,
     inode: Option<Inode>,
 }
 

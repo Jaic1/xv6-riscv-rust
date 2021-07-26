@@ -12,7 +12,7 @@ pub const NDIRECT: usize = 12;
 /// number of indirect blocks in a single block
 /// note: the blockno should be u32
 pub const NINDIRECT: usize = BSIZE / core::mem::size_of::<u32>();
-/// maxinum size of directory name, counting 0 in the end
+/// maxinum size of dir/file name, counting 0 in the end
 /// LTODO - currently allocated in the stack, should not be large
 pub const MAX_DIR_SIZE: usize = 14;
 /// maxinum size of file in bytes
@@ -45,3 +45,7 @@ pub const O_WRONLY: i32 = 0x1;
 pub const O_RDWR: i32 = 0x2;
 pub const O_CREATE: i32 = 0x200;
 pub const O_TRUNC: i32 = 0x400;
+
+/// maximum data size of a pipe
+pub const PIPESIZE: usize = 454;
+pub const PIPESIZE_U32: u32 = 454;
