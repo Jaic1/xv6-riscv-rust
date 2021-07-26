@@ -17,6 +17,7 @@ bitflags! {
         const G = 1 << 5;
         const A = 1 << 6;
         const D = 1 << 7;
+        const RSW = 0b11 << 8;
     }
 }
 
@@ -76,6 +77,24 @@ impl PageTableEntry {
     #[inline]
     fn write_perm(&mut self, pa: PhysAddr, perm: PteFlag) {
         self.data = ((pa.as_usize() >> PGSHIFT) << SV39FLAGLEN) | (perm | PteFlag::V).bits()
+    }
+
+    #[inline]
+    fn read_perm(&self) -> PteFlag {
+        PteFlag::from_bits_truncate(self.data)
+    }
+
+    /// Try to clone the physical page pointed by this leaf pte.
+    /// Give back a new raw physical page with the memory cloned.
+    /// SAFETY: Caller should guarantee this pte and its content is valid.
+    unsafe fn try_clone(&self) -> Result<*mut u8, ()> {
+        if !self.is_valid() {
+            panic!("cloning not valid pte");
+        }
+        let pa = self.as_phys_addr().into_raw();
+        let mem = RawSinglePage::try_new_uninit().map_err(|_| ())?;
+        ptr::copy_nonoverlapping(pa as *const u8, mem, PGSIZE);
+        Ok(mem)
     }
 
     /// If this pte points to a pagetable, free it. 
@@ -328,6 +347,7 @@ impl PageTable {
                         PteFlag::R | PteFlag::W | PteFlag::X | PteFlag::U
                     ) {
                         Err(s) => {
+                            #[cfg(feature = "kernel_warning")]
                             println!("kernel warning: uvm_alloc occurs {}", s);
                             unsafe { RawSinglePage::from_raw_and_drop(mem); }
                             self.uvm_dealloc(cur_size, old_size);
@@ -366,7 +386,7 @@ impl PageTable {
     /// Note: `va` must be page aligned.
     pub fn uvm_unmap(&mut self, va: usize, count: usize, freeing: bool) {
         if va % PGSIZE != 0 {
-            panic!("passed-in virtual address is not page aligned");
+            panic!("va not page aligned");
         }
 
         for ca in (va..(va+PGSIZE*count)).step_by(PGSIZE) {
@@ -392,6 +412,28 @@ impl PageTable {
         let pte = self.walk_mut(VirtAddr::try_from(va).unwrap())
                                                 .expect("cannot find available pte");
         pte.clear_user();
+    }
+
+    /// Copy the user page table to another process,
+    /// typically its child process.
+    pub fn uvm_copy(&mut self, child_pgt: &mut Self, size: usize) -> Result<(), ()> {
+        for i in (0..size).step_by(PGSIZE) {
+            let va = unsafe { VirtAddr::from_raw(i) };
+            let pte = self.walk(va).expect("pte not exist");
+            let mem = unsafe { pte.try_clone() };
+            if let Ok(mem) = mem {
+                let perm = pte.read_perm();
+                if child_pgt.map_pages(va, PGSIZE,
+                    unsafe { PhysAddr::from_raw(mem as usize) }, perm).is_ok()
+                {
+                    continue
+                }
+                unsafe { RawSinglePage::from_raw_and_drop(mem); }
+            }
+            child_pgt.uvm_unmap(0, i/PGSIZE, true);
+            return Err(())
+        }
+        Ok(())
     }
 
     /// Copy a null-terminated string from virtual address starting at srcva,

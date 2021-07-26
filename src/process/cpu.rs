@@ -153,7 +153,7 @@ impl Cpu {
 
     /// Yield the holding process if any and it's RUNNING.
     /// Directly return if none.
-    pub fn yield_proc(&mut self) {
+    pub fn try_yield_proc(&mut self) {
         if !self.proc.is_null() {
             let guard = unsafe {
                 self.proc.as_mut().unwrap().excl.lock()

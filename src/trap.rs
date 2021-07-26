@@ -21,7 +21,7 @@ pub unsafe fn trap_init_hart() {
 #[no_mangle]
 pub unsafe extern fn user_trap() {
     if !sstatus::is_from_user() {
-        panic!("user_trap: not from user mode, sstatus={:#x}", sstatus::read());
+        panic!("not from user mode, sstatus={:#x}", sstatus::read());
     }
 
     // switch the trap handler to kerneltrap()
@@ -36,15 +36,17 @@ pub unsafe extern fn user_trap() {
 
             let irq = plic::claim();
             if irq as usize == UART0_IRQ {
-                // TODO - uart intr
-                panic!("kerneltrap(): uart intr");
+                UART.intr();
             } else if irq as usize == VIRTIO0_IRQ {
                 DISK.lock().intr();
             } else {
                 panic!("unexpected interrupt, irq={}", irq);
             }
+            if irq > 0 {
+                plic::complete(irq);
+            }
 
-            plic::complete(irq);
+            p.check_abondon(-1);
         }
         ScauseType::IntSSoft => {
             // software interrupt from a machine-mode timer interrupt,
@@ -65,6 +67,7 @@ pub unsafe extern fn user_trap() {
         ScauseType::ExcUEcall => {
             p.check_abondon(-1);
             p.syscall();
+            p.check_abondon(-1);
         }
         ScauseType::Unknown => {
             println!("scause {:#x}", scause::read());
@@ -110,10 +113,10 @@ pub unsafe fn kerneltrap() {
     let local_sstatus = sstatus::read();
 
     if !sstatus::is_from_supervisor() {
-        panic!("kerneltrap(): not from supervisor mode");
+        panic!("not from supervisor mode");
     }
     if sstatus::intr_get() {
-        panic!("kerneltrap(): interrupts enabled");
+        panic!("interrupts enabled");
     }
 
     match scause::get_scause() {
@@ -125,9 +128,12 @@ pub unsafe fn kerneltrap() {
                 UART.intr();
             } else if irq as usize == VIRTIO0_IRQ {
                 DISK.lock().intr();
+            } else {
+                panic!("unexpected interrupt, irq={}", irq);
             }
-
-            plic::complete(irq);
+            if irq > 0 {
+                plic::complete(irq);
+            }
         }
         ScauseType::IntSSoft => {
             // software interrupt from a machine-mode timer interrupt,
@@ -142,19 +148,19 @@ pub unsafe fn kerneltrap() {
             sip::clear_ssip();
 
             // give up the cpu
-            CPU_MANAGER.my_cpu_mut().yield_proc();
+            CPU_MANAGER.my_cpu_mut().try_yield_proc();
         }
         ScauseType::ExcUEcall => {
-            panic!("kerneltrap(): ecall from supervisor mode");
+            panic!("ecall from supervisor mode");
         }
         ScauseType::Unknown => {
             println!("scause {:#x}", scause::read());
             println!("sepc={:#x} stval={:#x}", sepc::read(), stval::read());
-            panic!("kerneltrap(): unknown trap type");
+            panic!("unknown trap type");
         }
     }
 
-    // the yield() may have caused some traps to occur,
+    // The yielding() may have caused some traps to occur,
     // so restore trap registers for use by kernelvec.S's sepc instruction.
     sepc::write(local_sepc);
     sstatus::write(local_sstatus);

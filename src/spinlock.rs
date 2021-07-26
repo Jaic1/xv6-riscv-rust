@@ -16,7 +16,7 @@ pub struct SpinLock<T: ?Sized> {
 }
 
 unsafe impl<T: ?Sized + Send> Sync for SpinLock<T> {}
-// This is not needed for xv6-riscv's spinlock, while this is implemented both in crate std and spin.
+// This is not needed for xv6-riscv-rust's spinlock?, while this is implemented both in crate std and spin.
 // unsafe impl<T: ?Sized + Send> Send for SpinLock<T> {}
 
 impl<T> SpinLock<T> {

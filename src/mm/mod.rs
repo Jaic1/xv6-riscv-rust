@@ -33,6 +33,14 @@ pub trait RawPage: Sized {
         Ok(Box::into_raw(boxed_page) as *mut u8)
     }
 
+    /// Try to allocate an uninitialized physical page.
+    /// If succeed, return the raw pointer at the starting address of this page.
+    /// otherwise, return an [`AllocError`].
+    unsafe fn try_new_uninit() -> Result<*mut u8, AllocError> {
+        let boxed_page = Box::<Self>::try_new_uninit()?.assume_init();
+        Ok(Box::into_raw(boxed_page) as *mut u8)
+    }
+
     /// Reconstructs the box from the previously handed-out raw pointer.
     /// And then drop the box.
     unsafe fn from_raw_and_drop(raw: *mut u8) {

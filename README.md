@@ -64,6 +64,7 @@ rustc -Z unstable-options --print target-spec-json --target riscv64gc-unknown-no
 - [x] complete sys_exec and add elf loader
 - [x] add console, refactor uart and print
 - [x] add file layer and sys_open, sys_dup, sys_write
+- [x] add several sys_* func
 - [ ] complete a runnable fs
 
 ## TODO

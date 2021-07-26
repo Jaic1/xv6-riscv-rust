@@ -2,6 +2,8 @@ use array_macro::array;
 
 use core::convert::TryFrom;
 use core::ptr;
+use core::mem;
+use core::sync::atomic::Ordering;
 
 use crate::consts::{NPROC, PGSIZE, TRAMPOLINE, fs::ROOTDEV};
 use crate::mm::{kvm_map, PhysAddr, PteFlag, VirtAddr, RawPage, RawSinglePage, PageTable, RawQuadPage};
@@ -30,6 +32,7 @@ pub static mut PROC_MANAGER: ProcManager = ProcManager::new();
 
 pub struct ProcManager {
     table: [Proc; NPROC],
+    parents: SpinLock<[Option<usize>; NPROC]>,
     init_proc: usize,
     pid: SpinLock<usize>,
 }
@@ -37,9 +40,10 @@ pub struct ProcManager {
 impl ProcManager {
     const fn new() -> Self {
         Self {
-            table: array![_ => Proc::new(); NPROC],
+            table: array![i => Proc::new(i); NPROC],
+            parents: SpinLock::new(array![_ => None; NPROC], "proc parents"),
             init_proc: 0,
-            pid: SpinLock::new(0, "nextpid"),
+            pid: SpinLock::new(0, "pid"),
         }
     }
 
@@ -74,8 +78,9 @@ impl ProcManager {
 
     /// Look in the process table for an UNUSED proc.
     /// If found, initialize state required to run in the kernel,
-    /// and return with its ProcExcl held.
-    /// If there are no free procs, return None.
+    /// and return without its ProcExcl held.
+    /// Note: The returned [`Proc`] is in [`ProcState::ALLOCATED`].
+    /// LTODO - Should recover from OOM?
     fn alloc_proc(&mut self) ->
         Option<&mut Proc>
     {
@@ -156,6 +161,97 @@ impl ProcManager {
                 guard.state = ProcState::RUNNABLE;
             }
             drop(guard);
+        }
+    }
+
+    /// Set a newly created process's parent.
+    fn set_parent(&self, child_i: usize, parent_i: usize) {
+        let mut guard = self.parents.lock();
+        let ret = guard[child_i].replace(parent_i);
+        debug_assert!(ret.is_none());
+        drop(guard);
+    }
+
+    /// Put a process to exit, does not return.
+    fn exiting(&self, exit_pi: usize, exit_status: i32) {
+        if exit_pi == self.init_proc {
+            panic!("init process exiting");
+        }
+
+        unsafe { self.table[exit_pi].data.get().as_mut().unwrap().close_files(); }
+
+        let mut parent_map = self.parents.lock();
+
+        // Set the children's parent to init process.
+        let mut have_child = false;
+        for child in parent_map.iter_mut() {
+            match child {
+                Some(parent) if *parent == exit_pi => {
+                    *parent = self.init_proc;
+                    have_child = true;
+                },
+                _ => {},
+            }
+        }
+        if have_child {
+            self.wakeup(&self.table[self.init_proc] as *const Proc as usize);
+        }
+        let exit_parenti = *parent_map[exit_pi].as_ref().unwrap();
+        self.wakeup(&self.table[exit_parenti] as *const Proc as usize);
+
+        let mut exit_pexcl = self.table[exit_pi].excl.lock();
+        exit_pexcl.exit_status = exit_status;
+        exit_pexcl.state = ProcState::ZOMBIE;
+        drop(parent_map);
+        unsafe {
+            let exit_ctx = self.table[exit_pi].data.get().as_mut().unwrap().get_context();
+            CPU_MANAGER.my_cpu_mut().sched(exit_pexcl, exit_ctx);
+        }
+
+        unreachable!("exiting {}", exit_pi);
+    }
+
+    /// Wait for a child process to exit/ZOMBIE.
+    /// Return the child's pid if any, return `Err(())` if none. 
+    fn waiting(&self, pi: usize, addr: usize) -> Result<usize, ()> {
+        let mut parent_map = self.parents.lock();
+        let p = unsafe { CPU_MANAGER.my_proc() };
+        let pdata = unsafe { p.data.get().as_mut().unwrap() };
+
+        loop {
+            let mut have_child = false;
+            for i in 0..NPROC {
+                if parent_map[i].is_none() || *parent_map[i].as_ref().unwrap() != pi {
+                    continue;
+                }
+
+                let mut child_excl = self.table[i].excl.lock();
+                have_child = true;
+                if child_excl.state != ProcState::ZOMBIE {
+                    continue;
+                }
+                let child_pid = child_excl.pid;
+                if addr != 0 && pdata.copy_out(&child_excl.exit_status as *const _ as *const u8,
+                    addr, mem::size_of_val(&child_excl.exit_status)).is_err()
+                {
+                    return Err(())
+                }
+                parent_map[i].take();
+                self.table[i].killed.store(false, Ordering::Relaxed);
+                let child_data = unsafe { self.table[i].data.get().as_mut().unwrap() };
+                child_data.cleanup();
+                child_excl.cleanup();           
+                return Ok(child_pid)
+            }
+
+            if !have_child || p.killed.load(Ordering::Relaxed) {
+                return Err(())
+            }
+
+            // have children, but none of them exit
+            let channel = p as *const Proc as usize;
+            p.sleep(channel, parent_map);
+            parent_map = self.parents.lock();
         }
     }
 }

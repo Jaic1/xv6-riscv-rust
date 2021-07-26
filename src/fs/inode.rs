@@ -1,13 +1,14 @@
 //! Inode-relevant operations
 
-use core::{cmp::min, mem, panic, ptr};
-
 use array_macro::array;
 
-use crate::{consts::fs::NINDIRECT, mm::Address, sleeplock::SleepLockGuard, spinlock::SpinLock};
-use crate::sleeplock::SleepLock;
+use core::{cmp::min, mem, panic, ptr};
+
+use crate::mm::Address;
+use crate::spinlock::SpinLock;
+use crate::sleeplock::{SleepLock, SleepLockGuard};
 use crate::process::CPU_MANAGER;
-use crate::consts::fs::{NINODE, BSIZE, NDIRECT, MAX_DIR_SIZE, MAX_FILE_SIZE, ROOTDEV, ROOTINUM};
+use crate::consts::fs::{NINODE, BSIZE, NDIRECT, NINDIRECT, MAX_DIR_SIZE, MAX_FILE_SIZE, ROOTDEV, ROOTINUM};
 use super::{BCACHE, BufData, superblock::SUPER_BLOCK, LOG};
 use super::block::{bm_alloc, bm_free, inode_alloc};
 
@@ -388,7 +389,7 @@ impl InodeData {
     }
 
     /// Upate a modified in-memory inode to disk.
-    /// Typically called after changing the content of inode info.
+    /// Typically called after changing the inode info.
     pub fn update(&mut self) {
         let (dev, inum) = *self.valid.as_ref().unwrap();
 
@@ -401,6 +402,7 @@ impl InodeData {
 
     /// Read inode data from disk.
     /// According to the kind of dst, it will copy to virtual address or kernel address.
+    /// Note: `offset` + `count` should not be larger than the data size of inode.
     pub fn iread(&mut self, mut dst: Address, offset: u32, count: u32) -> Result<(), ()> {
         // check the reading content is in range
         let end = offset.checked_add(count).ok_or(())?;
@@ -430,13 +432,38 @@ impl InodeData {
         Ok(())
     }
 
-    // LTODO - try_read? for fileread
+    /// Similar to [`iread`].
+    /// Try to read as much as possible, return the bytes read.
+    pub fn try_iread(&mut self, dst: Address, offset: u32, count: u32) -> Result<u32, ()> {
+        // check the reading content is in range
+        if offset > self.dinode.size {
+            return Err(())
+        }
+        let end = offset.checked_add(count).ok_or(())?;
+        let actual_count = if end > self.dinode.size {
+            self.dinode.size - offset
+        } else {
+            count
+        };
+        self.iread(dst, offset, actual_count)?;
+        Ok(actual_count)
+    }
 
-    /// Write inode data to disk.
+    /// Wrapper of [`try_iwrite`].
+    /// Succeed only when all the requested count of btyes are written.
+    pub fn iwrite(&mut self, src: Address, offset: u32, count: u32) -> Result<(), ()> {
+        match self.try_iwrite(src, offset, count) {
+            Ok(ret) => if ret == count { Ok(()) } else { Err(()) },
+            Err(()) => Err(()),
+        }
+    }
+
+    /// Try to write inode data to disk as much as possible.
     /// According to the kind of src, it will copy from virtual address or kernel address.
-    /// Note: It will automatically increment the size of this inode, i.e.,
+    /// Return the actual bytes written.
+    /// Note1: It will automatically increment the size of this inode, i.e.,
     ///     allocate new blocks in the disk/fs, but the offset must be in range.
-    pub fn iwrite(&mut self, mut src: Address, offset: u32, count: u32) -> Result<(), ()> {
+    pub fn try_iwrite(&mut self, mut src: Address, offset: u32, count: u32) -> Result<u32, ()> {
         // check the writing content is in range
         if offset > self.dinode.size {
             return Err(())
@@ -447,17 +474,18 @@ impl InodeData {
         }
 
         let (dev, _) = *self.valid.as_ref().unwrap();
-        let offset = offset as usize;
+        let mut block_base = (offset as usize) / BSIZE;
+        let block_offset = (offset as usize) % BSIZE;
         let mut count = count as usize;
-        let mut block_base = offset / BSIZE;
-        let block_offset = offset % BSIZE;
         let mut write_count = min(BSIZE - block_offset, count);
         let mut block_offset = block_offset as isize;
         while count > 0 {
             let mut buf = BCACHE.bread(dev, self.map_blockno(block_base));
             let dst_ptr = unsafe { (buf.raw_data_mut() as *mut u8).offset(block_offset) };
-            src.copy_in(dst_ptr, write_count)?;
-            drop(buf);
+            if src.copy_in(dst_ptr, write_count).is_err() {
+                break
+            };
+            LOG.write(buf);
 
             count -= write_count;
             src = src.offset(write_count);
@@ -465,7 +493,24 @@ impl InodeData {
             block_offset = 0;
             write_count = min(BSIZE, count);
         }
-        Ok(())
+
+        // end <= MAX_FILE_SIZE <= u32::MAX
+        let size = (end - count) as u32;
+        if size > self.dinode.size {
+            self.dinode.size = size;
+        }
+        self.update();
+        Ok(size-offset)
+    }
+
+    /// Give out the inode status.
+    pub fn istat(&self, stat: &mut FileStat) {
+        let (dev, inum) = self.valid.unwrap();
+        stat.dev = dev;
+        stat.inum = inum;
+        stat.itype = self.dinode.itype;
+        stat.nlink = self.dinode.nlink;
+        stat.size = self.dinode.size as u64;
     }
 
     /// Given the relevant nth data block of this inode.
@@ -599,9 +644,33 @@ pub fn icheck() {
     debug_assert_eq!(mem::align_of::<BlockNo>(), mem::align_of::<u32>());
 
     debug_assert_eq!(mem::align_of::<BufData>() % mem::align_of::<DirEntry>(), 0);
+
+    debug_assert!(MAX_FILE_SIZE <= u32::MAX as usize);
 }
 
 type BlockNo = u32;
+
+#[repr(C)]
+#[derive(Debug)]
+pub struct FileStat {
+    dev: u32,
+    inum: u32,
+    itype: InodeType,
+    nlink: u16,
+    size: u64,
+}
+
+impl FileStat {
+    pub const fn uninit() -> Self {
+        Self {
+            dev: 0,
+            inum: 0,
+            itype: InodeType::Empty,
+            nlink: 0,
+            size: 0,
+        }
+    }
+}
 
 /// On-disk inode structure
 #[repr(C)]

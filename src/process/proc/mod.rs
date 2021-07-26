@@ -3,15 +3,16 @@ use array_macro::array;
 use alloc::{boxed::Box, sync::Arc};
 use core::mem;
 use core::option::Option;
+use core::sync::atomic::{AtomicBool, Ordering};
 use core::ptr;
 use core::cell::UnsafeCell;
 
-use crate::{consts::{PGSIZE, fs::{NFILE, ROOTIPATH}}, fs::File};
-use crate::mm::PageTable;
+use crate::consts::{PGSIZE, fs::{NFILE, ROOTIPATH}};
+use crate::mm::{PageTable, RawPage, RawSinglePage};
 use crate::register::{satp, sepc, sstatus};
 use crate::spinlock::{SpinLock, SpinLockGuard};
 use crate::trap::user_trap;
-use crate::fs::{Inode, ICACHE};
+use crate::fs::{Inode, ICACHE, LOG, File};
 
 use super::CpuManager;
 use super::PROC_MANAGER;
@@ -36,6 +37,7 @@ pub enum ProcState {
 /// Exclusive to the process
 pub struct ProcExcl {
     pub state: ProcState,
+    pub exit_status: i32,
     pub channel: usize,
     pub pid: usize,
 }
@@ -44,9 +46,18 @@ impl ProcExcl {
     const fn new() -> Self {
         Self {
             state: ProcState::UNUSED,
+            exit_status: 0,
             channel: 0,
             pid: 0,
         }
+    }
+
+    /// Clean up the content in [`ProcExcl`],
+    pub fn cleanup(&mut self) {
+        self.pid = 0;
+        self.channel = 0;
+        self.exit_status = 0;
+        self.state = ProcState::UNUSED;
     }
 }
 
@@ -141,6 +152,52 @@ impl ProcData {
             .find(|(_, f)| f.is_none())
             .map(|(i, _)| i)
     }
+
+    /// Clean up the content in [`ProcData`],
+    /// except kernel stack, context, opened files and cwd.
+    /// LTODO - should excl must be held by caller during this cleanup?
+    pub fn cleanup(&mut self) {
+        self.name[0] = 0;
+        let tf = self.tf;
+        self.tf = ptr::null_mut();
+        if !tf.is_null() {
+            unsafe { RawSinglePage::from_raw_and_drop(tf as *mut u8); }
+        }
+        let pgt = self.pagetable.take();
+        if let Some(mut pgt) = pgt {
+            pgt.dealloc_proc_pagetable(self.sz);
+        }
+        self.sz = 0;
+    }
+
+    /// Close any opened files and cwd,
+    /// except kernel stack and context.
+    /// Should only be called when the process exits.
+    pub fn close_files(&mut self) {
+        for f in self.open_files.iter_mut() {
+            drop(f.take())
+        }
+        LOG.begin_op();
+        debug_assert!(self.cwd.is_some());
+        drop(self.cwd.take());
+        LOG.end_op();
+    }
+
+    /// Increase/Decrease the user program break for the process.
+    /// Return the previous program break if succeed.
+    fn sbrk(&mut self, increment: i32) -> Result<usize, ()> {
+        let old_size = self.sz;
+        if increment > 0 {
+            let new_size = old_size + (increment as usize);
+            self.pagetable.as_mut().unwrap().uvm_alloc(old_size, new_size)?;
+            self.sz = new_size;
+        } else if increment < 0 {
+            let new_size = old_size - ((-increment) as usize);
+            self.pagetable.as_mut().unwrap().uvm_dealloc(old_size, new_size);
+            self.sz = new_size;
+        }
+        Ok(old_size)
+    }
 }
 
 /// Process Struct
@@ -150,17 +207,20 @@ impl ProcData {
 /// but then if it is interrupted and get killed, so it need to
 /// clean its ProcData, so UnsafeCell is better.
 pub struct Proc {
+    /// index into the process table
+    index: usize,
     pub excl: SpinLock<ProcExcl>,
     pub data: UnsafeCell<ProcData>,
-    pub killed: bool,
+    pub killed: AtomicBool,
 }
 
 impl Proc {
-    pub const fn new() -> Self {
+    pub const fn new(index: usize) -> Self {
         Self {
+            index,
             excl: SpinLock::new(ProcExcl::new(), "ProcExcl"),
             data: UnsafeCell::new(ProcData::new()),
-            killed: false,
+            killed: AtomicBool::new(false),
         }
     }
 
@@ -192,31 +252,20 @@ impl Proc {
         pd.cwd = Some(ICACHE.namei(&ROOTIPATH).expect("cannot find root inode by b'/'"));
     }
 
-    /// Exit the current process. No return.
-    /// Remain zombie state until its parent recycle its resource,
-    /// like trapframe and pagetable.
-    pub fn exit(&mut self, status: isize) {
-        if unsafe { PROC_MANAGER.is_init_proc(&self) } {
-            panic!("init_proc exiting");
-        }
-
-        todo!("exit: status={}", status);
-    }
-
     /// Abondon current process if
     /// the killed flag is true
-    pub fn check_abondon(&mut self, status: isize) {
-        if self.killed {
-            self.exit(status);
+    pub fn check_abondon(&mut self, exit_status: i32) {
+        if self.killed.load(Ordering::Relaxed) {
+            unsafe { PROC_MANAGER.exiting(self.index, exit_status); }
         }
     }
 
     /// Abondon current process by:
     /// 1. setting its killed flag to true
     /// 2. and then exit
-    pub fn abondon(&mut self, status: isize) {
-        self.killed = true;
-        self.exit(status);
+    pub fn abondon(&mut self, exit_status: i32) {
+        self.killed.store(true, Ordering::Relaxed);
+        unsafe { PROC_MANAGER.exiting(self.index, exit_status); }
     }
 
     /// Handle system call
@@ -228,10 +277,17 @@ impl Proc {
         let a7 = tf.a7;
         tf.admit_ecall();
         let sys_result = match a7 {
+            1 => self.sys_fork(),
+            2 => self.sys_exit(),
+            3 => self.sys_wait(),
+            5 => self.sys_read(),
             7 => self.sys_exec(),
+            8 => self.sys_fstat(),
             10 => self.sys_dup(),
+            12 => self.sys_sbrk(),
             15 => self.sys_open(),
             16 => self.sys_write(),
+            21 => self.sys_close(),
             _ => {
                 panic!("unknown syscall num: {}", a7);
             }
@@ -249,7 +305,7 @@ impl Proc {
         assert_eq!(guard.state, ProcState::RUNNING);
         guard.state = ProcState::RUNNABLE;
         guard = unsafe { CPU_MANAGER.my_cpu_mut().sched(guard,
-            &mut self.data.get_mut().context as *mut _) };
+            self.data.get_mut().get_context()) };
         drop(guard);
     }
 
@@ -280,6 +336,51 @@ impl Proc {
 
         excl_guard.channel = 0;
         drop(excl_guard);
+    }
+
+    /// Fork a child process.
+    fn fork(&mut self) -> Result<usize, ()> {
+        let pdata = self.data.get_mut();
+        let child = unsafe { PROC_MANAGER.alloc_proc().ok_or(())? };
+        let mut cexcl = child.excl.lock();
+        let cdata = unsafe { child.data.get().as_mut().unwrap() };
+
+        // clone memory
+        let cpgt = cdata.pagetable.as_mut().unwrap();
+        let size = pdata.sz;
+        if pdata.pagetable.as_mut().unwrap().uvm_copy(cpgt, size).is_err() {
+            debug_assert_eq!(child.killed.load(Ordering::Relaxed), false);
+            child.killed.store(false, Ordering::Relaxed);
+            cdata.cleanup();
+            cexcl.cleanup();
+            return Err(())
+        }
+        cdata.sz = size;
+
+        // clone trapframe and return 0 on a0
+        unsafe {
+            ptr::copy_nonoverlapping(pdata.tf, cdata.tf, 1);
+            cdata.tf.as_mut().unwrap().a0 = 0;
+        }
+
+        // clone opened files and cwd
+        cdata.open_files.clone_from(&pdata.open_files);
+        cdata.cwd.clone_from(&pdata.cwd);
+        
+        // copy process name
+        cdata.name.copy_from_slice(&pdata.name);
+
+        let cpid = cexcl.pid;
+
+        drop(cexcl);
+
+        unsafe { PROC_MANAGER.set_parent(child.index, self.index); }
+
+        let mut cexcl = child.excl.lock();
+        cexcl.state = ProcState::RUNNABLE;
+        drop(cexcl);
+
+        Ok(cpid)
     }
 }
 

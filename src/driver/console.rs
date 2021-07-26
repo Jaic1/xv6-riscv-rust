@@ -1,6 +1,7 @@
 //! Console driver for user input and output.
 
 use core::num::Wrapping;
+use core::sync::atomic::Ordering;
 
 use crate::consts::driver::*;
 use crate::spinlock::SpinLock;
@@ -25,7 +26,7 @@ pub(super) fn read(mut dst: Address, tot: usize) -> Result<usize, ()> {
         // wait until the console device write some data
         while console.ri == console.wi {
             let p = unsafe { CPU_MANAGER.my_proc() };
-            if p.killed {
+            if p.killed.load(Ordering::Relaxed) {
                 return Err(())
             }
             p.sleep(&console.ri as *const Wrapping<_> as usize, console);

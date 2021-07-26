@@ -1,5 +1,6 @@
 use alloc::sync::Arc;
 use core::cmp::min;
+use core::convert::TryInto;
 
 use crate::consts::driver::NDEV;
 use crate::consts::fs::{MAXOPBLOCKS, BSIZE};
@@ -7,11 +8,12 @@ use crate::consts::fs::{O_RDONLY, O_WRONLY, O_RDWR, O_CREATE, O_TRUNC};
 use crate::driver::DEVICES;
 use crate::mm::Address;
 
-use super::{LOG, ICACHE};
+use super::{ICACHE, LOG, inode::FileStat};
 use super::{Inode, InodeType};
 
 /// File abstraction above inode.
 /// It can represent regular file, device and pipe.
+#[derive(Debug)]
 pub struct File {
     inner: FileInner,
     readable: bool,
@@ -83,15 +85,41 @@ impl File {
         }))
     }
 
+    /// Read from file to user buffer at `addr` in total `count` bytes.
+    /// Return the acutal conut of bytes read.
+    pub fn fread(&self, addr: Address, count: usize) -> Result<usize, ()> {
+        if !self.readable {
+            return Err(())
+        }
+
+        match self.inner {
+            FileInner::Pipe => todo!("pipe read"),
+            FileInner::Regular(ref file) => {
+                let mut idata = file.inode.as_ref().unwrap().lock();
+                match idata.try_iread(addr, file.offset, count.try_into().unwrap()) {
+                    Ok(read_count) => {
+                        // file.offset += read_count; TODO
+                        Ok(read_count as usize)
+                    },
+                    Err(()) => Err(())
+                }
+            },
+            FileInner::Device(ref dev) => {
+                let dev_read = DEVICES[dev.major as usize].as_ref().ok_or(())?.read;
+                dev_read(addr, count)
+            },
+        }
+    }
+
     /// Write user data from `addr` to file in total `count` bytes.
-    /// Return the conut of bytes written.
+    /// Return the acutal conut of bytes written.
     pub fn fwrite(&self, addr: Address, count: usize) -> Result<usize, ()> {
         if !self.writable {
             return Err(())
         }
 
         match self.inner {
-            FileInner::Pipe => todo!("pipe"),
+            FileInner::Pipe => todo!("pipe write"),
             FileInner::Regular(ref file) => {
                 let batch = ((MAXOPBLOCKS-4)/2*BSIZE) as u32;
                 let count_u32 = count as u32;
@@ -100,14 +128,20 @@ impl File {
                     let write_count = min(batch, count_u32 - i);
                     LOG.begin_op();
                     let mut idata = file.inode.as_ref().unwrap().lock();
-                    let ret = idata.iwrite(addr, file.offset, write_count);
+                    let ret = idata.try_iwrite(addr, file.offset, write_count);
+                    drop(idata);
                     LOG.end_op();
 
-                    if ret.is_err() {
-                        return Err(())
+                    match ret {
+                        Ok(actual_count) => {
+                            // file.offset += actual_count; TODO
+                            if actual_count != write_count {
+                                return Ok((i+actual_count) as usize)
+                            }
+                        },
+                        Err(()) => return Err(()),
                     }
                     addr = addr.offset(write_count as usize);
-                    // file.offset += write_count; TODO
                 }
                 Ok(count)
             },
@@ -116,6 +150,19 @@ impl File {
                 dev_write(addr, count)
             },
         }
+    }
+
+    /// Copy the file status to user memory.
+    pub fn fstat(&self, stat: &mut FileStat) -> Result<(), ()> {
+        let inode: &Inode;
+        match self.inner {
+            FileInner::Pipe => return Err(()),
+            FileInner::Regular(ref file) => inode = file.inode.as_ref().unwrap(),
+            FileInner::Device(ref dev) => inode = dev.inode.as_ref().unwrap(),
+        }
+        let idata = inode.lock();
+        idata.istat(stat);
+        Ok(())
     }
 }
 
@@ -138,17 +185,20 @@ impl Drop for File {
     }
 }
 
+#[derive(Debug)]
 enum FileInner {
     Pipe,
     Regular(FileRegular),
     Device(FileDevice),
 }
 
+#[derive(Debug)]
 struct FileRegular {
     offset: u32,
     inode: Option<Inode>,
 }
 
+#[derive(Debug)]
 struct FileDevice {
     major: u16,
     inode: Option<Inode>,
