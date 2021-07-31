@@ -303,6 +303,7 @@ impl Proc {
             12 => self.sys_sbrk(),
             15 => self.sys_open(),
             16 => self.sys_write(),
+            17 => self.sys_mknod(),
             18 => self.sys_unlink(),
             21 => self.sys_close(),
             _ => {

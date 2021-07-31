@@ -1,25 +1,18 @@
-# xv6-riscv-rust [TL;DR]
+# xv6-riscv-rust
 This is a project intending to port xv6-riscv using Rust.  
-Some major differences will be mentioned below.
-
-## Note
-1. can only compile on target triple `riscv64gc-unknown-none-elf`,  
-refer *.cargo/config* for detail
-
-2. `cargo run` may write things below to the console in the end, which is expected.
-```
-panickeadni at ckpead niatck 'e'd art 'rrusust_t_mamainin: :enu esd t_main: end of hart 0', src/rmain.rs:34:5
-nd of hart 2',o f src/rmain.rs:34:5
-hart 1', src/rmain.rs:34:5
-```
-Reason: there are 3 harts, and `panic` will not acquire the `Pr` lock to write,  
-which could be helpful when debugging.
+It is now runnable.
 
 ## Usage
-Run:
+1. Build fs:
+```
+make fs.img
+```
+2. Run:
 ```
 cargo run
 ```
+
+## Misc Options/Features
 Objdump:
 ```
 cargo objdump --bin xv6-riscv-rust -- -d > kernel.asm
@@ -28,7 +21,11 @@ cargo objdump --bin xv6-riscv-rust -- -d > kernel.asm
 // in target/riscv64gc-unknown-none-elf/debug
 riscv64-unknown-elf-objdump -S xv6-riscv-rust > kernel.asm
 ```
-Verbose debug info:
+trace system call:
+```
+cargo run --features "trace_syscall"
+```
+Verbose init info:
 ```
 cargo run --features "verbose_init_info"
 ```
@@ -66,6 +63,7 @@ rustc -Z unstable-options --print target-spec-json --target riscv64gc-unknown-no
 - [x] add file layer and sys_open, sys_dup, sys_write
 - [x] add several sys_* func
 - [x] add pipe in fs and also sys_unlink, sys_chdir, sys_pipe
+- [x] port user library
 - [ ] complete a runnable fs
 
 ## TODO

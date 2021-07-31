@@ -1,4 +1,5 @@
 ## Difference
+no longer maintained
 
 ### SpinLock
 1. while xv6-riscv wraps spinlock into a single object,  

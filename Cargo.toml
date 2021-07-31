@@ -13,8 +13,8 @@ panic = "abort"
 panic = "abort"
 
 [dependencies]
-bit_field = "0.10.0"
-bitflags = "1.2.1"
+bit_field = "=0.10.0"
+bitflags = "=1.2.1"
 array-macro = "=2.0.0"
 
 [features]

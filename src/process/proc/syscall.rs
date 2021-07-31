@@ -28,6 +28,7 @@ pub trait Syscall {
     fn sys_sbrk(&mut self) -> SysResult;
     fn sys_open(&mut self) -> SysResult;
     fn sys_write(&mut self) -> SysResult;
+    fn sys_mknod(&mut self) -> SysResult;
     fn sys_unlink(&mut self) -> SysResult;
     fn sys_close(&mut self) -> SysResult;
 }
@@ -288,6 +289,30 @@ impl Syscall for Proc {
         println!("[{}].write({}, {:#x}, {}) = {:?}", self.excl.lock().pid, fd, addr, count, ret);
 
         ret.map(|count| count as usize)
+    }
+
+    /// Create a device file.
+    fn sys_mknod(&mut self) -> SysResult {
+        let mut path: [u8; MAXPATH] = [0; MAXPATH];
+        self.arg_str(0, &mut path).map_err(syscall_warning)?;
+        let major = self.arg_i32(1);
+        let minor = self.arg_i32(2);
+        if major < 0 || minor < 0 {
+            return Err(())
+        }
+
+        let major: u16 = major.try_into().map_err(|_| ())?;
+        let minor: u16 = minor.try_into().map_err(|_| ())?;
+        LOG.begin_op();
+        let ret = ICACHE.create(&path, InodeType::Device, major, minor, true).ok_or(());
+
+        #[cfg(feature = "trace_syscall")]
+        println!("[{}].mknod(path={}, major={}, minor={}) = {:?}",
+            self.excl.lock().pid, String::from_utf8_lossy(&path), major, minor, ret);
+
+        let ret = ret.map(|inode| {drop(inode);0});
+        LOG.end_op();
+        ret
     }
 
     /// Delete a pathname and possibly delete the refered inode in the fs.
