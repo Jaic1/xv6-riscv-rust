@@ -240,7 +240,6 @@ impl Proc {
 
     /// Called by ProcManager's user_init,
     /// Only be called once for the first user process
-    /// TODO - copy user code and sth else
     pub fn user_init(&mut self) {
         let pd = self.data.get_mut();
 
@@ -296,15 +295,21 @@ impl Proc {
             3 => self.sys_wait(),
             4 => self.sys_pipe(),
             5 => self.sys_read(),
+            6 => self.sys_kill(),
             7 => self.sys_exec(),
             8 => self.sys_fstat(),
             9 => self.sys_chdir(),
             10 => self.sys_dup(),
+            11 => self.sys_getpid(),
             12 => self.sys_sbrk(),
+            13 => self.sys_sleep(),
+            14 => self.sys_uptime(),
             15 => self.sys_open(),
             16 => self.sys_write(),
             17 => self.sys_mknod(),
             18 => self.sys_unlink(),
+            19 => self.sys_link(),
+            20 => self.sys_mkdir(),
             21 => self.sys_close(),
             _ => {
                 panic!("unknown syscall num: {}", a7);

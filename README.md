@@ -64,7 +64,7 @@ rustc -Z unstable-options --print target-spec-json --target riscv64gc-unknown-no
 - [x] add several sys_* func
 - [x] add pipe in fs and also sys_unlink, sys_chdir, sys_pipe
 - [x] port user library
-- [ ] complete a runnable fs
+- [x] add several sys_* func and handle some OOM cases
 
 ## TODO
 - [ ] recycle pgt for uvm(no need to recycle pgt for kvm now)
@@ -79,6 +79,7 @@ rustc -Z unstable-options --print target-spec-json --target riscv64gc-unknown-no
 - [ ] refactor `begin_op` and `end_op`
 - [ ] compare raw pointer's `get_mut` method with null-unchecked version `&mut *`
 - [ ] [new_uninit](https://github.com/rust-lang/rust/issues/63291)
+- [ ] OOM
 
 ## Useful Reference
 [Why implementing Send trait for Mutex?](https://users.rust-lang.org/t/why-we-implement-send-trait-for-mutex/39065)  

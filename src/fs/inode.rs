@@ -345,6 +345,12 @@ impl InodeData {
         }
     }
 
+    /// Get inode dev and inum.
+    #[inline]
+    pub fn get_dev_inum(&self) -> (u32, u32) {
+        self.valid.unwrap()
+    }
+
     /// Get inode type.
     #[inline]
     pub fn get_itype(&self) -> InodeType {
@@ -355,6 +361,17 @@ impl InodeData {
     #[inline]
     pub fn get_devnum(&self) -> (u16, u16) {
         (self.dinode.major, self.dinode.minor)
+    }
+
+    /// Increase the hard link by 1.
+    #[inline]
+    pub fn link(&mut self) {
+        self.dinode.nlink += 1;
+    }
+
+    /// Decrease the hard link by 1.
+    pub fn unlink(&mut self) {
+        self.dinode.nlink -= 1;
     }
 
     /// Discard the inode data/content.
@@ -590,7 +607,7 @@ impl InodeData {
 
     /// Write a new [`DirEntry`] into this inode, whose type must be directory.
     /// LTODO - Panics if `inum` is larger than u16::MAX.
-    fn dir_link(&mut self, name: &[u8; MAX_DIR_SIZE], inum: u32) -> Result<(), ()> {
+    pub fn dir_link(&mut self, name: &[u8; MAX_DIR_SIZE], inum: u32) -> Result<(), ()> {
         if inum > u16::MAX as u32 {
             panic!("inum {} too large", inum);
         }

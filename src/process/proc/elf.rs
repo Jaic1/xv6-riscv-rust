@@ -43,7 +43,14 @@ pub fn load(p: &mut Proc, path: &[u8], argv: &[Option<Box<[u8; MAXARGLEN]>>]) ->
 
     // allocate new pagetable, not assign to proc yet
     let pdata = p.data.get_mut();
-    let mut pgt = PageTable::alloc_proc_pagetable(pdata.tf as usize);
+    let mut pgt;
+    match PageTable::alloc_proc_pagetable(pdata.tf as usize) {
+        Some(p) => pgt = p,
+        None => {
+            drop(idata); drop(inode); LOG.end_op();
+            return Err("mem not enough")
+        },
+    }
     let mut proc_size = 0usize;
 
     // load each program section

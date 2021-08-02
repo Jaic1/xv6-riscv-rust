@@ -13,6 +13,7 @@ use crate::fs;
 
 pub use cpu::{CPU_MANAGER, CpuManager};
 pub use cpu::{push_off, pop_off};
+pub use proc::Proc;
 
 mod context;
 mod proc;
@@ -20,7 +21,7 @@ mod cpu;
 mod trapframe;
 
 use context::Context;
-use proc::{Proc, ProcState};
+use proc::ProcState;
 use trapframe::TrapFrame;
 
 // no lock to protect PROC_MANAGER, i.e.,
@@ -95,10 +96,16 @@ impl ProcManager {
                     let pd = p.data.get_mut();
 
                     // alloc trapframe
-                    pd.tf = unsafe { RawSinglePage::new_zeroed() as *mut TrapFrame };
+                    pd.tf = unsafe { RawSinglePage::try_new_zeroed().ok()? as *mut TrapFrame };
 
                     debug_assert!(pd.pagetable.is_none());
-                    pd.pagetable = Some(PageTable::alloc_proc_pagetable(pd.tf as usize));
+                    match PageTable::alloc_proc_pagetable(pd.tf as usize) {
+                        Some(pgt) => pd.pagetable = Some(pgt),
+                        None => {
+                            unsafe { RawSinglePage::from_raw_and_drop(pd.tf as *mut u8); }
+                            return None
+                        },
+                    }
                     pd.init_context();
                     guard.pid = new_pid;
                     guard.state = ProcState::ALLOCATED;
@@ -253,6 +260,22 @@ impl ProcManager {
             p.sleep(channel, parent_map);
             parent_map = self.parents.lock();
         }
+    }
+
+    /// Kill a process with given pid.
+    pub fn kill(&self, pid: usize) -> Result<(), ()> {
+        for i in 0..NPROC {
+            let mut guard = self.table[i].excl.lock();
+            if guard.pid == pid {
+                self.table[i].killed.store(true, Ordering::Relaxed);
+                if guard.state == ProcState::SLEEPING {
+                    guard.state = ProcState::RUNNABLE;
+                }
+                return Ok(())
+            }
+        }
+
+        Err(())
     }
 }
 

@@ -181,7 +181,7 @@ impl PageTable {
             if pte.is_valid() {
                 pgt = pte.as_page_table();
             } else {
-                let zerod_pgt: Box<PageTable> = unsafe { Box::new_zeroed().assume_init() };
+                let zerod_pgt = unsafe { Box::<Self>::try_new_zeroed().ok()?.assume_init() };
                 pgt = Box::into_raw(zerod_pgt);
                 pte.write(PhysAddr::try_from(pgt as usize).unwrap());
             }
@@ -261,20 +261,14 @@ impl PageTable {
         }
     }
 
-    /// Create an empty page table for a given process.
-    /// This will panic if there is not enough heap for a new pagetable.
-    fn uvm_create() -> Box<Self> {
-        unsafe { Box::new_zeroed().assume_init() }
-    }
-
     /// Allocate a new user pagetable.
     /// Map trampoline code and trapframe.
-    pub fn alloc_proc_pagetable(trapframe: usize) -> Box<Self> {
+    pub fn alloc_proc_pagetable(trapframe: usize) -> Option<Box<Self>> {
         extern "C" {
             fn trampoline();
         }
 
-        let mut pagetable = Self::uvm_create();
+        let mut pagetable = unsafe { Box::<Self>::try_new_zeroed().ok()?.assume_init() };
         pagetable
             .map_pages(
                 VirtAddr::from(TRAMPOLINE),
@@ -282,7 +276,7 @@ impl PageTable {
                 PhysAddr::try_from(trampoline as usize).unwrap(),
                 PteFlag::R | PteFlag::X,
             )
-            .expect("user proc table mapping trampoline");
+            .ok()?;
         pagetable
             .map_pages(
                 VirtAddr::from(TRAPFRAME),
@@ -290,9 +284,9 @@ impl PageTable {
                 PhysAddr::try_from(trapframe).unwrap(),
                 PteFlag::R | PteFlag::W,
             )
-            .expect("user proc table mapping trapframe");
+            .ok()?;
 
-        pagetable
+        Some(pagetable)
     }
 
     /// Manually dealloc a user pagetable.
@@ -532,6 +526,7 @@ impl PageTable {
             match self.walk_addr(va) {
                 Ok(phys_addr) => pa = phys_addr,
                 Err(s) => {
+                    #[cfg(feature = "kernel_warning")]
                     println!("kernel warning: {} when pagetable copy_in", s);
                     return Err(())
                 }

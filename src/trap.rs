@@ -1,6 +1,9 @@
 //! Trap handler between user/kernel space and kernel space
 
-use crate::consts::{TRAMPOLINE, TRAPFRAME, UART0_IRQ, VIRTIO0_IRQ};
+use core::num::Wrapping;
+use core::sync::atomic::Ordering;
+
+use crate::{consts::{TRAMPOLINE, TRAPFRAME, UART0_IRQ, VIRTIO0_IRQ}, process::{PROC_MANAGER, Proc}};
 use crate::register::{stvec, sstatus, sepc, stval, sip,
     scause::{self, ScauseType}};
 use crate::process::{CPU_MANAGER, CpuManager};
@@ -166,10 +169,30 @@ pub unsafe fn kerneltrap() {
     sstatus::write(local_sstatus);
 }
 
-static TICKS: SpinLock<usize> = SpinLock::new(0usize, "time");
+static TICKS: SpinLock<Wrapping<usize>> = SpinLock::new(Wrapping(0), "time");
 
 fn clock_intr() {
-    let mut _ticks = TICKS.lock();
-    *_ticks += 1;
-    drop(_ticks);
+    let mut guard = TICKS.lock();
+    *guard += Wrapping(1);
+    unsafe { PROC_MANAGER.wakeup(&TICKS as *const _ as usize); }
+    drop(guard);
+}
+
+/// Sleep for a specified number of ticks.
+pub fn clock_sleep(p: &Proc, count: usize) -> Result<(), ()> {
+    let mut guard = TICKS.lock();
+    let old_ticks = *guard;
+    while (*guard - old_ticks) < Wrapping(count) {
+        if p.killed.load(Ordering::Relaxed) {
+            return Err(())
+        }
+        p.sleep(&TICKS as *const _ as usize, guard);
+        guard = TICKS.lock();
+    }
+    Ok(())
+}
+
+/// Read the current ticks.
+pub fn clock_read() -> usize {
+    TICKS.lock().0
 }

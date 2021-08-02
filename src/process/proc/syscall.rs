@@ -10,6 +10,7 @@ use core::mem;
 use crate::consts::{MAXPATH, MAXARG, MAXARGLEN, fs::MAX_DIR_SIZE};
 use crate::process::PROC_MANAGER;
 use crate::fs::{ICACHE, Inode, InodeType, LOG, File, Pipe, FileStat};
+use crate::trap;
 
 use super::{Proc, elf};
 
@@ -21,15 +22,21 @@ pub trait Syscall {
     fn sys_wait(&mut self) -> SysResult;
     fn sys_pipe(&mut self) -> SysResult;
     fn sys_read(&mut self) -> SysResult;
+    fn sys_kill(&mut self) -> SysResult;
     fn sys_exec(&mut self) -> SysResult;
     fn sys_fstat(&mut self) -> SysResult;
     fn sys_chdir(&mut self) -> SysResult;
     fn sys_dup(&mut self) -> SysResult;
+    fn sys_getpid(&mut self) -> SysResult;
     fn sys_sbrk(&mut self) -> SysResult;
+    fn sys_sleep(&mut self) -> SysResult;
+    fn sys_uptime(&mut self) -> SysResult;
     fn sys_open(&mut self) -> SysResult;
     fn sys_write(&mut self) -> SysResult;
     fn sys_mknod(&mut self) -> SysResult;
     fn sys_unlink(&mut self) -> SysResult;
+    fn sys_link(&mut self) -> SysResult;
+    fn sys_mkdir(&mut self) -> SysResult;
     fn sys_close(&mut self) -> SysResult;
 }
 
@@ -116,6 +123,22 @@ impl Syscall for Proc {
         println!("[{}].read(fd={}, addr={:#x}, count={}) = {:?}", self.excl.lock().pid, fd, addr, count, ret);
 
         ret.map(|count| count as usize)
+    }
+
+    /// Kill a process.
+    /// Note: Other signals are not supported yet.
+    fn sys_kill(&mut self) -> SysResult {
+        let pid = self.arg_i32(0);
+        if pid < 0 {
+            return Err(())
+        }
+        let pid = pid as usize;
+        let ret = unsafe { PROC_MANAGER.kill(pid) };
+
+        #[cfg(feature = "trace_syscall")]
+        println!("[{}].kill(pid={}) = {:?}", self.excl.lock().pid, pid, ret);
+
+        ret.map(|()| 0)
     }
 
     /// Load an elf binary and execuate it the currrent process context.
@@ -236,6 +259,16 @@ impl Syscall for Proc {
         Ok(new_fd)
     }
 
+    /// Get the process's pid.
+    fn sys_getpid(&mut self) -> SysResult {
+        let pid = self.excl.lock().pid;
+
+        #[cfg(feature = "trace_syscall")]
+        println!("[{}].getpid() = {}", pid, pid);
+
+        Ok(pid)
+    }
+
     /// Redirect to [`ProcData::sbrk`].
     ///
     /// [`ProcData::sbrk`]: ProcData::sbrk
@@ -247,6 +280,32 @@ impl Syscall for Proc {
         println!("[{}].sbrk({}) = {:?}", self.excl.lock().pid, increment, ret);
 
         ret
+    }
+
+    /// Put the current process into sleep.
+    fn sys_sleep(&mut self) -> SysResult {
+        let count = self.arg_i32(0);
+        if count < 0 {
+            return Err(())
+        }
+        let count = count as usize;
+        let ret = trap::clock_sleep(self, count);
+
+        #[cfg(feature = "trace_syscall")]
+        println!("[{}].sleep({}) = {:?}", self.excl.lock().pid, count, ret);
+
+        ret.map(|()| 0)
+    }
+
+    /// Not much like the linux/unix's uptime.
+    /// Just return the ticks in current implementation.
+    fn sys_uptime(&mut self) -> SysResult {
+        let ret = trap::clock_read();
+
+        #[cfg(feature = "trace_syscall")]
+        println!("[{}].uptime() = {}", self.excl.lock().pid, ret);
+
+        Ok(ret)
     }
 
     /// Open and optionally create a file.
@@ -341,6 +400,89 @@ impl Syscall for Proc {
         println!("[{}].unlink(path={}) = {:?}", self.excl.lock().pid, String::from_utf8_lossy(&path), ret);
 
         ret.map(|()| 0)
+    }
+
+    /// Create a new hard link.
+    fn sys_link(&mut self) -> SysResult {
+        let mut old_path: [u8; MAXPATH] = [0; MAXPATH];
+        let mut new_path: [u8; MAXPATH] = [0; MAXPATH];
+        self.arg_str(0, &mut old_path).map_err(syscall_warning)?;
+        self.arg_str(1, &mut new_path).map_err(syscall_warning)?;
+
+        LOG.begin_op();
+
+        // find old path
+        let old_inode = ICACHE.namei(&old_path).ok_or_else(|| {LOG.end_op(); ()})?;
+        let mut old_idata = old_inode.lock();
+        let (old_dev, old_inum) = old_idata.get_dev_inum();
+        if old_idata.get_itype() == InodeType::Directory {
+            syscall_warning("trying to create new link to a directory");
+            LOG.end_op();
+            return Err(())
+        }
+        old_idata.link();
+        old_idata.update();
+        drop(old_idata);
+
+        // if we cannot create a new path
+        let revert_link = move |inode: Inode| {
+            let mut idata = inode.lock();
+            idata.unlink();
+            idata.update();
+            drop(idata);
+            drop(inode);
+            LOG.end_op();
+        };
+
+        // create new path
+        let mut name: [u8; MAX_DIR_SIZE] = [0; MAX_DIR_SIZE];
+        let new_inode: Inode;
+        match ICACHE.namei_parent(&new_path, &mut name) {
+            Some(inode) => new_inode = inode,
+            None => {
+                revert_link(old_inode);
+                return Err(())
+            }
+        }
+        let mut new_idata = new_inode.lock();
+        if new_idata.get_dev_inum().0 != old_dev || new_idata.dir_link(&name, old_inum).is_err() {
+            revert_link(old_inode);
+            return Err(())
+        }
+        drop(new_idata);
+        drop(new_inode);
+        drop(old_inode);
+
+        LOG.end_op();
+
+        #[cfg(feature = "trace_syscall")]
+        println!("[{}].link(old_path={}, new_path={})", self.excl.lock().pid,
+            String::from_utf8_lossy(&old_path), String::from_utf8_lossy(&new_path));
+        
+        Ok(0)
+    }
+
+    /// Create a directory.
+    /// Note: Mode is not supported yet.
+    fn sys_mkdir(&mut self) -> SysResult {
+        let mut path: [u8; MAXPATH] = [0; MAXPATH];
+        self.arg_str(0, &mut path).map_err(syscall_warning)?;
+
+        LOG.begin_op();
+        let ret = ICACHE.create(&path, InodeType::Directory, 0, 0, false);
+
+        #[cfg(feature = "trace_syscall")]
+        println!("[{}].mkdir(path={}) = {:?}", self.excl.lock().pid, String::from_utf8_lossy(&path), ret);
+
+        let ret = match ret {
+            Some(inode) => {
+                drop(inode);
+                Ok(0)
+            },
+            None => Err(()),
+        };
+        LOG.end_op();
+        ret
     }
 
     /// Given a file descriptor, close the opened file.
