@@ -454,7 +454,7 @@ impl InodeData {
     pub fn try_iread(&mut self, dst: Address, offset: u32, count: u32) -> Result<u32, ()> {
         // check the reading content is in range
         if offset > self.dinode.size {
-            return Err(())
+            return Ok(0)
         }
         let end = offset.checked_add(count).ok_or(())?;
         let actual_count = if end > self.dinode.size {

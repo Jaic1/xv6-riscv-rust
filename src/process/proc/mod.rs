@@ -129,6 +129,15 @@ impl ProcData {
         self.pagetable.as_ref().unwrap().as_satp()
     }
 
+    /// Simply check if the user passed-in virtual address is in range.
+    fn check_user_addr(&self, user_addr: usize) -> Result<(), ()> {
+        if user_addr > self.sz {
+            Err(())
+        } else {
+            Ok(())
+        }
+    }
+
     /// Copy content from src to the user's dst virtual address.
     /// Copy `count` bytes in total.
     /// It will redirect the call to pagetable.

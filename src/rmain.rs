@@ -46,9 +46,6 @@ pub unsafe fn rust_main() -> ! {
         kvm_init_hart(); // turn on paging
         trap_init_hart(); // install kernel trap vector
         plic::init_hart(cpuid); // ask PLIC for device interrupts
-
-        // LTODO - init other things
-        loop {}
     }
 
     #[cfg(feature = "unit_test")]

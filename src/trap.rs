@@ -43,7 +43,7 @@ pub unsafe extern fn user_trap() {
             } else if irq as usize == VIRTIO0_IRQ {
                 DISK.lock().intr();
             } else {
-                panic!("unexpected interrupt, irq={}", irq);
+                // panic!("unexpected interrupt, irq={}", irq);
             }
             if irq > 0 {
                 plic::complete(irq);
@@ -132,7 +132,7 @@ pub unsafe fn kerneltrap() {
             } else if irq as usize == VIRTIO0_IRQ {
                 DISK.lock().intr();
             } else {
-                panic!("unexpected interrupt, irq={}", irq);
+                // panic!("unexpected interrupt, irq={}", irq);
             }
             if irq > 0 {
                 plic::complete(irq);

@@ -11,6 +11,8 @@ panic = "abort"
 
 [profile.release]
 panic = "abort"
+opt-level = 2
+lto = "off"
 
 [dependencies]
 bit_field = "=0.10.0"

@@ -436,7 +436,7 @@ impl PageTable {
         -> Result<(), &'static str>
     {
         let mut i: usize = 0;
-        let mut va = VirtAddr::try_from(srcva).unwrap();
+        let mut va = VirtAddr::try_from(srcva)?;
 
         // iterate through the raw content page by page
         while i < dst.len() {
@@ -481,7 +481,7 @@ impl PageTable {
             return Ok(())
         }
 
-        let mut va = VirtAddr::try_from(dst).unwrap();
+        let mut va = VirtAddr::try_from(dst).map_err(|_| ())?;
         va.pg_round_down();
         loop {
             let mut pa;
@@ -515,12 +515,20 @@ impl PageTable {
     pub fn copy_in(&self, mut src: usize, mut dst: *mut u8, mut count: usize)
         -> Result<(), ()>
     {
-        if count == 0 {
-            return Ok(())
-        }
-
         let mut va = VirtAddr::try_from(src).unwrap();
         va.pg_round_down();
+
+        if count == 0 {
+            match self.walk_addr(va) {
+                Ok(_) => return Ok(()),
+                Err(s) => {
+                    #[cfg(feature = "kernel_warning")]
+                    println!("kernel warning: {} when pagetable copy_in", s);
+                    return Err(())
+                }
+            }
+        }
+
         loop {
             let pa;
             match self.walk_addr(va) {

@@ -65,6 +65,7 @@ rustc -Z unstable-options --print target-spec-json --target riscv64gc-unknown-no
 - [x] add pipe in fs and also sys_unlink, sys_chdir, sys_pipe
 - [x] port user library
 - [x] add several sys_* func and handle some OOM cases
+- [x] enable all harts
 
 ## TODO
 - [ ] recycle pgt for uvm(no need to recycle pgt for kvm now)
@@ -80,6 +81,7 @@ rustc -Z unstable-options --print target-spec-json --target riscv64gc-unknown-no
 - [ ] compare raw pointer's `get_mut` method with null-unchecked version `&mut *`
 - [ ] [new_uninit](https://github.com/rust-lang/rust/issues/63291)
 - [ ] OOM
+- [ ] unexpected external interrupt irq=0
 
 ## Useful Reference
 [Why implementing Send trait for Mutex?](https://users.rust-lang.org/t/why-we-implement-send-trait-for-mutex/39065)  
@@ -95,3 +97,4 @@ rustc -Z unstable-options --print target-spec-json --target riscv64gc-unknown-no
 [Consider deprecation of UB-happy static mut](https://github.com/rust-lang/rust/issues/53639)  
 [non-reentrant function](https://doc.bccnsoft.com/docs/rust-1.36.0-docs-html/embedded-book/start/exceptions.html)  
 [Cpp's Relaxed ordering](https://en.cppreference.com/w/cpp/atomic/memory_order#Relaxed_ordering)  
+[Rust build profile](https://doc.rust-lang.org/cargo/reference/profiles.html)  

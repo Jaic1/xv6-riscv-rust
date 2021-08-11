@@ -100,7 +100,7 @@ UPROGS=\
 	$(USER)/_wc\
 	$(USER)/_zombie\
 
-fs.img: mkfs/mkfs $(UPROGS)
-	mkfs/mkfs fs.img $(UPROGS)
+fs.img: mkfs/mkfs README.md $(UPROGS)
+	mkfs/mkfs fs.img README.md $(UPROGS)
 
 -include user/*.d

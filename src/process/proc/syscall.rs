@@ -109,18 +109,18 @@ impl Syscall for Proc {
     /// Read form file descriptor.
     fn sys_read(&mut self) -> SysResult {
         let fd = self.arg_fd(0)?;
-        let addr = self.arg_addr(1);
+        let user_addr = self.arg_addr(1);
         let count = self.arg_i32(2);
-        if count <= 0 {
+        if count <= 0 || self.data.get_mut().check_user_addr(user_addr).is_err() {
             return Err(())
         }
         let count = count as u32;
         
         let file = self.data.get_mut().open_files[fd].as_ref().unwrap();
-        let ret = file.fread(addr, count);
+        let ret = file.fread(user_addr, count);
 
         #[cfg(feature = "trace_syscall")]
-        println!("[{}].read(fd={}, addr={:#x}, count={}) = {:?}", self.excl.lock().pid, fd, addr, count, ret);
+        println!("[{}].read(fd={}, addr={:#x}, count={}) = {:?}", self.excl.lock().pid, fd, user_addr, count, ret);
 
         ret.map(|count| count as usize)
     }
@@ -335,17 +335,18 @@ impl Syscall for Proc {
     /// Return the conut of bytes written.
     fn sys_write(&mut self) -> SysResult {
         let fd = self.arg_fd(0)?;
-        let addr = self.arg_addr(1);
+        let user_addr = self.arg_addr(1);
         let count = self.arg_i32(2);
-        if count <= 0 {
+        if count <= 0 || self.data.get_mut().check_user_addr(user_addr).is_err() {
             return Err(())
         }
         let count = count as u32;
+
         let file = self.data.get_mut().open_files[fd].as_ref().unwrap();
-        let ret = file.fwrite(addr, count);
+        let ret = file.fwrite(user_addr, count);
 
         #[cfg(feature = "trace_syscall")]
-        println!("[{}].write({}, {:#x}, {}) = {:?}", self.excl.lock().pid, fd, addr, count, ret);
+        println!("[{}].write({}, {:#x}, {}) = {:?}", self.excl.lock().pid, fd, user_addr, count, ret);
 
         ret.map(|count| count as usize)
     }
