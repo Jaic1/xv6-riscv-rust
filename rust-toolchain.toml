@@ -1,2 +1,3 @@
 [toolchain]
 channel = "nightly-2021-04-01"
+targets = ["riscv64gc-unknown-none-elf"]
