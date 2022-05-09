@@ -3,6 +3,10 @@ This is a project intending to port xv6-riscv using Rust.
 It is now runnable.
 
 ## Usage
+0. Follow [6.S081 2021](https://pdos.csail.mit.edu/6.828/2021/tools.html)/[6.S081 2020](https://pdos.csail.mit.edu/6.828/2020/tools.html) to install tools.
+
+    We may need to build qemu from source depending on the machine.
+
 1. Build fs:
 ```
 make fs.img
